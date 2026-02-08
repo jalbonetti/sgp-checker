@@ -1,5 +1,4 @@
 // config.js - Same Team Prop Checker Configuration
-// Supabase connection, team mappings, prop definitions, and constants
 
 export const CONFIG = {
     SUPABASE_URL: 'https://hcwolbvmffkmjcxsumwn.supabase.co',
@@ -14,7 +13,6 @@ export const CONFIG = {
     ALIAS_CACHE_TTL: 30 * 60 * 1000,
 };
 
-// Game Log → NBA standard team abbreviations
 export const GAME_LOG_TO_NBA_ABBREV = {
     'ATL':'ATL','BOS':'BOS','BRK':'BKN','CHA':'CHA','CHI':'CHI','CLE':'CLE',
     'DAL':'DAL','DEN':'DEN','DET':'DET','GS':'GSW','HOU':'HOU','IND':'IND',
@@ -38,46 +36,44 @@ export const TEAM_FULL_NAMES = {
     'UTA':'Utah Jazz','WAS':'Washington Wizards',
 };
 
-// Filter conditions
-export const FILTER_CONDITIONS = [
-    { id: 'starts', label: 'Starts', type: 'filter' },
-    { id: 'off_bench', label: 'Off Bench', type: 'filter' },
-    { id: 'plays', label: 'Plays', type: 'filter' },
-    { id: 'does_not_play', label: 'Does Not Play', type: 'filter' },
+// Scope options for active players
+export const SCOPE_OPTIONS = [
+    { id: 'all', label: 'All Games' },
+    { id: 'starts', label: 'Starts' },
+    { id: 'off_bench', label: 'Off Bench' },
 ];
 
-// Numeric props
-export const NUMERIC_PROP_CONDITIONS = [
-    { id: 'pts', label: 'Points', type: 'numeric', column: 'PTS' },
-    { id: 'trb', label: 'Rebounds', type: 'numeric', column: 'TRB' },
-    { id: 'ast', label: 'Assists', type: 'numeric', column: 'AST' },
-    { id: '3p', label: '3-Pointers', type: 'numeric', column: '3P' },
-    { id: 'stl', label: 'Steals', type: 'numeric', column: 'STL' },
-    { id: 'blk', label: 'Blocks', type: 'numeric', column: 'BLK' },
-    { id: 'to', label: 'Turnovers', type: 'numeric', column: 'TO' },
-    { id: 'pa', label: 'Pts + Asts', type: 'numeric', column: 'PA' },
-    { id: 'pr', label: 'Pts + Rebs', type: 'numeric', column: 'PR' },
-    { id: 'pra', label: 'Pts + Rebs + Asts', type: 'numeric', column: 'PRA' },
-    { id: 'ra', label: 'Rebs + Asts', type: 'numeric', column: 'RA' },
-    { id: 'sb', label: 'Blks + Stls', type: 'numeric', column: 'SB' },
+// Props for active players
+export const NUMERIC_PROPS = [
+    { id: 'pts', label: 'Points', column: 'PTS' },
+    { id: 'trb', label: 'Rebounds', column: 'TRB' },
+    { id: 'ast', label: 'Assists', column: 'AST' },
+    { id: '3p', label: '3-Pointers', column: '3P' },
+    { id: 'stl', label: 'Steals', column: 'STL' },
+    { id: 'blk', label: 'Blocks', column: 'BLK' },
+    { id: 'to', label: 'Turnovers', column: 'TO' },
+    { id: 'pa', label: 'Pts + Asts', column: 'PA' },
+    { id: 'pr', label: 'Pts + Rebs', column: 'PR' },
+    { id: 'pra', label: 'Pts + Rebs + Asts', column: 'PRA' },
+    { id: 'ra', label: 'Rebs + Asts', column: 'RA' },
+    { id: 'sb', label: 'Blks + Stls', column: 'SB' },
 ];
 
-// Binary props
-export const BINARY_PROP_CONDITIONS = [
-    { id: 'dd', label: 'Double-Double', type: 'binary', column: 'DD' },
-    { id: 'td', label: 'Triple-Double', type: 'binary', column: 'TD' },
+export const BINARY_PROPS = [
+    { id: 'dd', label: 'Double-Double', column: 'DD' },
+    { id: 'td', label: 'Triple-Double', column: 'TD' },
 ];
 
-export const ALL_CONDITIONS = [
-    ...FILTER_CONDITIONS,
-    { id: '_sep1', label: '───────────', type: 'separator' },
-    ...NUMERIC_PROP_CONDITIONS,
-    { id: '_sep2', label: '───────────', type: 'separator' },
-    ...BINARY_PROP_CONDITIONS,
+export const ALL_PROPS = [
+    ...NUMERIC_PROPS,
+    { id: '_sep', label: '───────────', type: 'separator' },
+    ...BINARY_PROPS,
 ];
+
+// Special prop for injured/out players only
+export const INJURED_PROP = { id: 'does_not_play', label: 'Does Not Play', column: null, type: 'injured_filter' };
 
 export const STARTER_POSITIONS = ['(G  )', '(F  )', '(C  )'];
 export const BENCH_POSITION = '(SUB)';
 
 export function isMobile() { return window.innerWidth <= 768; }
-export function isTablet() { return window.innerWidth > 768 && window.innerWidth <= 1024; }
