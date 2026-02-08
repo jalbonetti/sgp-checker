@@ -1,6 +1,4 @@
 // styles/styles.js - Same Team Prop Checker Styles
-// Teal accent on dark purple background
-// UPDATED: Team grid = 15 per row on desktop
 
 export function injectStyles() {
     if (document.getElementById('stc-styles')) return;
@@ -12,14 +10,13 @@ export function injectStyles() {
             --stc-accent-light: rgba(6,182,212,0.12); --stc-accent-glow: rgba(6,182,212,0.25);
             --stc-bg-primary: #1a1028; --stc-bg-card: #231536;
             --stc-bg-input: #2d1b45; --stc-bg-input-focus: #351f52;
-            --stc-bg-row: #2a1740; --stc-bg-row-hover: #33204d;
+            --stc-bg-row-hover: #33204d;
             --stc-border: rgba(255,255,255,0.08); --stc-border-focus: rgba(6,182,212,0.5);
             --stc-text-primary: #e8e0f0; --stc-text-secondary: #a89bbe;
             --stc-text-muted: #7a6b8f; --stc-text-accent: #06b6d4;
-            --stc-success: #34d399; --stc-danger: #f87171;
-            --stc-danger-bg: rgba(248,113,113,0.1);
+            --stc-danger: #f87171; --stc-danger-bg: rgba(248,113,113,0.1);
+            --stc-warning: #fbbf24; --stc-warning-bg: rgba(251,191,36,0.1);
             --stc-radius: 8px; --stc-radius-lg: 12px;
-            --stc-shadow: 0 2px 8px rgba(0,0,0,0.3);
             --stc-transition: 150ms ease;
         }
         #stc-root { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color: var(--stc-text-primary); max-width: 900px; margin: 0 auto; padding: 0 16px; }
@@ -29,27 +26,21 @@ export function injectStyles() {
         .stc-title { font-size: 22px; font-weight: 700; color: var(--stc-text-primary); margin: 0 0 4px 0; letter-spacing: -0.3px; }
         .stc-title-accent { color: var(--stc-accent); }
         .stc-subtitle { font-size: 13px; color: var(--stc-text-muted); margin: 0; }
-
         .stc-section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--stc-text-muted); margin-bottom: 8px; }
 
-        /* Team grid — 15 per row on desktop via CSS grid */
-        .stc-team-grid {
-            display: grid;
-            grid-template-columns: repeat(15, 1fr);
-            gap: 6px;
-            justify-items: center;
-        }
-        .stc-team-btn { padding: 6px 0; width: 100%; border: 1px solid var(--stc-border); border-radius: var(--stc-radius); background: var(--stc-bg-card); color: var(--stc-text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; transition: all var(--stc-transition); white-space: nowrap; text-align: center; }
+        .stc-team-grid { display: grid; grid-template-columns: repeat(15, 1fr); gap: 6px; }
+        .stc-team-btn { padding: 6px 0; width: 100%; border: 1px solid var(--stc-border); border-radius: var(--stc-radius); background: var(--stc-bg-card); color: var(--stc-text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; transition: all var(--stc-transition); text-align: center; }
         .stc-team-btn:hover { border-color: var(--stc-border-focus); background: var(--stc-bg-row-hover); color: var(--stc-text-primary); }
         .stc-team-btn.active { border-color: var(--stc-accent); background: var(--stc-accent-light); color: var(--stc-accent); box-shadow: 0 0 8px var(--stc-accent-glow); }
         .stc-team-btn.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
-
         .stc-no-games { text-align: center; padding: 24px; color: var(--stc-text-muted); font-size: 14px; }
 
         .stc-conditions-panel { background: var(--stc-bg-card); border: 1px solid var(--stc-border); border-radius: var(--stc-radius-lg); padding: 16px; margin-bottom: 20px; }
         .stc-conditions-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-        .stc-conditions-title { font-size: 14px; font-weight: 600; color: var(--stc-text-primary); }
+        .stc-conditions-title { font-size: 14px; font-weight: 600; }
         .stc-conditions-count { font-size: 12px; color: var(--stc-text-muted); }
+
+        .stc-dup-warning { display: none; background: var(--stc-warning-bg); border: 1px solid rgba(251,191,36,0.3); border-radius: 6px; padding: 8px 12px; color: var(--stc-warning); font-size: 12px; margin-bottom: 10px; }
 
         .stc-condition-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--stc-border); flex-wrap: wrap; }
         .stc-condition-row:last-of-type { border-bottom: none; }
@@ -61,10 +52,11 @@ export function injectStyles() {
         .stc-select option { background: #2d1b45; color: #e8e0f0; }
         .stc-select option:disabled { color: #7a6b8f; }
 
-        .stc-select-player { flex: 1; min-width: 140px; max-width: 220px; }
-        .stc-select-condition { min-width: 130px; }
-        .stc-select-direction { min-width: 60px; max-width: 70px; }
-        .stc-input-value { width: 62px; text-align: center; }
+        .stc-select-player { flex: 1; min-width: 140px; max-width: 200px; }
+        .stc-select-scope { min-width: 100px; }
+        .stc-select-condition { min-width: 120px; }
+        .stc-select-direction { min-width: 55px; max-width: 65px; }
+        .stc-input-value { width: 58px; text-align: center; }
         .stc-input-value::-webkit-inner-spin-button, .stc-input-value::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         .stc-input-value { -moz-appearance: textfield; }
 
@@ -89,13 +81,17 @@ export function injectStyles() {
         .stc-results-combined { background: var(--stc-bg-card); border: 1px solid var(--stc-accent); border-radius: var(--stc-radius-lg); padding: 20px; margin-bottom: 16px; box-shadow: 0 0 16px var(--stc-accent-glow); }
         .stc-results-combined-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--stc-accent); margin-bottom: 10px; }
         .stc-result-stats { display: flex; gap: 24px; flex-wrap: wrap; }
-        .stc-result-stat { flex: 1; min-width: 160px; }
+        .stc-result-stat { flex: 1; min-width: 140px; }
         .stc-result-stat-label { font-size: 11px; color: var(--stc-text-muted); margin-bottom: 4px; }
         .stc-result-stat-value { font-size: 26px; font-weight: 700; color: var(--stc-text-primary); line-height: 1.1; }
         .stc-result-stat-detail { font-size: 12px; color: var(--stc-text-secondary); margin-top: 2px; }
 
+        /* Muted style for Team Games context stat */
+        .stc-result-stat-muted .stc-result-stat-value { font-size: 20px; color: var(--stc-text-secondary); }
+        .stc-result-stat-muted .stc-result-stat-label { color: var(--stc-text-muted); }
+
         .stc-results-individual { background: var(--stc-bg-card); border: 1px solid var(--stc-border); border-radius: var(--stc-radius-lg); padding: 16px; margin-bottom: 16px; }
-        .stc-results-individual-title { font-size: 13px; font-weight: 600; color: var(--stc-text-primary); margin-bottom: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+        .stc-results-individual-title { font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
         .stc-results-individual-title .stc-chevron { transition: transform var(--stc-transition); font-size: 10px; }
         .stc-results-individual-title .stc-chevron.open { transform: rotate(90deg); }
 
@@ -116,20 +112,18 @@ export function injectStyles() {
 
         .stc-error { background: var(--stc-danger-bg); border: 1px solid rgba(248,113,113,0.3); border-radius: var(--stc-radius); padding: 12px 16px; color: var(--stc-danger); font-size: 13px; margin-top: 12px; }
 
-        /* Responsive */
-        @media (max-width: 1024px) {
-            .stc-team-grid { grid-template-columns: repeat(10, 1fr); }
-        }
+        @media (max-width: 1024px) { .stc-team-grid { grid-template-columns: repeat(10, 1fr); } }
         @media (max-width: 768px) {
-            #stc-root { padding: 0 12px; }
-            .stc-title { font-size: 18px; }
+            #stc-root { padding: 0 12px; } .stc-title { font-size: 18px; }
             .stc-team-grid { grid-template-columns: repeat(6, 1fr); }
             .stc-condition-row { gap: 6px; }
             .stc-select-player { min-width: 120px; max-width: 100%; flex: 1 1 100%; }
-            .stc-select-condition { min-width: 110px; flex: 1; }
-            .stc-select-direction { min-width: 55px; }
-            .stc-input-value { width: 55px; }
+            .stc-select-scope { min-width: 90px; flex: 1; }
+            .stc-select-condition { min-width: 100px; flex: 1; }
+            .stc-select-direction { min-width: 50px; }
+            .stc-input-value { width: 50px; }
             .stc-result-stat-value { font-size: 22px; }
+            .stc-result-stat-muted .stc-result-stat-value { font-size: 18px; }
             .stc-individual-values { flex-direction: column; gap: 4px; }
             .stc-dates-list { columns: 2; }
         }
