@@ -1,9 +1,7 @@
-// services/parlayEngine.js - Condition Evaluation & Intersection Engine
-// Supports:
-// - Active players: scope (All/Starts/Bench) + prop
-// - Injured players: "Does Not Play" (team dates minus player dates)
-// - Combined denominator = intersection of all scoped date pools
-// - Last 30 days = today-31 through yesterday
+// services/parlayEngine.js
+// - Individual denominators use combined eligible pool (intersected scoped dates)
+// - "None" prop = all scoped dates qualify (no stat filter)
+// - "Does Not Play" = team dates minus player dates
 
 import { STARTER_POSITIONS, BENCH_POSITION } from '../config.js';
 import { fetchTeamGameLogs } from './dataService.js';
@@ -29,37 +27,32 @@ function filterToLast30Days(dates) {
 }
 
 function getScopedDates(scopeId, logsByDate) {
-    const scopedDates = new Set();
+    const s = new Set();
     switch (scopeId) {
         case 'starts':
-            logsByDate.forEach((log, date) => {
-                if (STARTER_POSITIONS.includes((log.Position || '').trim())) scopedDates.add(date);
-            });
-            break;
+            logsByDate.forEach((log, date) => { if (STARTER_POSITIONS.includes((log.Position || '').trim())) s.add(date); }); break;
         case 'off_bench':
-            logsByDate.forEach((log, date) => {
-                if ((log.Position || '').trim() === BENCH_POSITION) scopedDates.add(date);
-            });
-            break;
-        case 'all': default:
-            logsByDate.forEach((_, date) => scopedDates.add(date));
-            break;
+            logsByDate.forEach((log, date) => { if ((log.Position || '').trim() === BENCH_POSITION) s.add(date); }); break;
+        default:
+            logsByDate.forEach((_, date) => s.add(date)); break;
     }
-    return scopedDates;
+    return s;
 }
 
 function getScopeLabel(scopeId) {
-    switch (scopeId) {
-        case 'starts': return 'Starts';
-        case 'off_bench': return 'Off Bench';
-        default: return null;
-    }
+    switch (scopeId) { case 'starts': return 'Starts'; case 'off_bench': return 'Off Bench'; default: return null; }
 }
 
 function evaluateProp(propDef, direction, value, logsByDate, scopedDates) {
     const qualifyingDates = new Set();
-    const isBinary = propDef.column === 'DD' || propDef.column === 'TD';
 
+    // "None" = all scoped dates qualify (no stat check)
+    if (!propDef || propDef.type === 'none') {
+        scopedDates.forEach(d => qualifyingDates.add(d));
+        return { qualifyingDates, description: 'Any Game' };
+    }
+
+    const isBinary = propDef.column === 'DD' || propDef.column === 'TD';
     scopedDates.forEach(date => {
         const log = logsByDate.get(date);
         if (!log) return;
@@ -79,23 +72,16 @@ function evaluateProp(propDef, direction, value, logsByDate, scopedDates) {
     let description;
     if (isBinary) description = `${propDef.label}: ${direction === 'yes' ? 'Yes' : 'No'}`;
     else description = `${propDef.label} ${direction === 'gte' ? '≥' : '<'} ${value}`;
-
     return { qualifyingDates, description };
 }
 
-// ============================================================
-// MAIN ENTRY POINT
-// ============================================================
 export async function runParlayCheck(conditions, teamAbbrev) {
     if (!conditions || conditions.length === 0) return { error: 'No conditions to check' };
-
-    console.log(`🏀 Running check: ${conditions.length} conditions for ${teamAbbrev}`);
 
     const allTeamLogs = await fetchTeamGameLogs(teamAbbrev);
     if (!allTeamLogs || allTeamLogs.length === 0) return { error: `No game log data found for ${teamAbbrev}.` };
 
     const allTeamDates = [...new Set(allTeamLogs.map(r => r.Date))];
-    console.log(`📅 ${allTeamDates.length} team game dates`);
 
     const playerLogsMap = new Map();
     allTeamLogs.forEach(log => {
@@ -103,50 +89,45 @@ export async function runParlayCheck(conditions, teamAbbrev) {
         playerLogsMap.get(log.Player).push(log);
     });
 
-    // Evaluate each condition row
-    const rowResults = [];
+    // ---- Phase 1: Compute per-row scoped dates and qualifying dates ----
+    const rowData = []; // { qualifyingDates, scopedDates, playerName, description }
 
     for (const cond of conditions) {
         const gameLogName = cond.player.gameLogName;
         let playerLogs = playerLogsMap.get(gameLogName) || [];
         if (playerLogs.length === 0) {
             const fuzzy = findFuzzyPlayerMatch(gameLogName, playerLogsMap);
-            if (fuzzy) { playerLogs = playerLogsMap.get(fuzzy) || []; console.log(`🔄 Fuzzy: "${gameLogName}" → "${fuzzy}"`); }
+            if (fuzzy) { playerLogs = playerLogsMap.get(fuzzy) || []; }
         }
 
         const logsByDate = new Map();
         playerLogs.forEach(log => logsByDate.set(log.Date, log));
-        const playerPlayedDates = new Set(logsByDate.keys());
         const allTeamDateSet = new Set(allTeamDates);
 
-        // Handle "Does Not Play" for injured players
         if (cond.propId === 'does_not_play') {
-            // Qualifying dates = team dates where this player did NOT play
             const qualifyingDates = new Set();
-            allTeamDateSet.forEach(d => { if (!playerPlayedDates.has(d)) qualifyingDates.add(d); });
-            // Scoped dates = all team dates (the universe for this condition)
-            const scopedDates = new Set(allTeamDates);
-
-            console.log(`   ${cond.player.displayName} [DNP]: ${qualifyingDates.size}/${scopedDates.size}`);
-
-            rowResults.push({
+            allTeamDateSet.forEach(d => { if (!logsByDate.has(d)) qualifyingDates.add(d); });
+            rowData.push({
                 playerName: cond.player.displayName,
                 description: 'Does Not Play',
                 qualifyingDates,
-                scopedDates,
+                scopedDates: new Set(allTeamDates), // DNP scope = all team dates
             });
             continue;
         }
 
-        // Active player: scope + prop
         const scopedDates = getScopedDates(cond.scope, logsByDate);
         const scopeLabel = getScopeLabel(cond.scope);
         const propResult = evaluateProp(cond.propDef, cond.direction, cond.value, logsByDate, scopedDates);
-        const description = scopeLabel ? `${scopeLabel} · ${propResult.description}` : propResult.description;
 
-        console.log(`   ${cond.player.displayName} [${cond.scope}]: ${propResult.qualifyingDates.size}/${scopedDates.size} — ${description}`);
+        let description;
+        if (cond.propId === 'none') {
+            description = scopeLabel ? scopeLabel : 'Any Game';
+        } else {
+            description = scopeLabel ? `${scopeLabel} · ${propResult.description}` : propResult.description;
+        }
 
-        rowResults.push({
+        rowData.push({
             playerName: cond.player.displayName,
             description,
             qualifyingDates: propResult.qualifyingDates,
@@ -154,41 +135,47 @@ export async function runParlayCheck(conditions, teamAbbrev) {
         });
     }
 
-    // Intersect qualifying dates
-    let combinedQualifying = new Set(rowResults[0].qualifyingDates);
-    for (let i = 1; i < rowResults.length; i++) {
-        const next = rowResults[i].qualifyingDates;
-        const inter = new Set();
-        combinedQualifying.forEach(d => { if (next.has(d)) inter.add(d); });
-        combinedQualifying = inter;
-    }
-
-    // Intersect scoped dates for combined eligible denominator
-    let combinedEligible = new Set(rowResults[0].scopedDates);
-    for (let i = 1; i < rowResults.length; i++) {
-        const next = rowResults[i].scopedDates;
+    // ---- Phase 2: Intersect all scoped dates → combined eligible pool ----
+    let combinedEligible = new Set(rowData[0].scopedDates);
+    for (let i = 1; i < rowData.length; i++) {
+        const next = rowData[i].scopedDates;
         const inter = new Set();
         combinedEligible.forEach(d => { if (next.has(d)) inter.add(d); });
         combinedEligible = inter;
     }
 
-    const combinedQual30 = filterToLast30Days(combinedQualifying);
+    // ---- Phase 3: Intersect all qualifying dates → combined hits ----
+    let combinedQualifying = new Set(rowData[0].qualifyingDates);
+    for (let i = 1; i < rowData.length; i++) {
+        const next = rowData[i].qualifyingDates;
+        const inter = new Set();
+        combinedQualifying.forEach(d => { if (next.has(d)) inter.add(d); });
+        combinedQualifying = inter;
+    }
+
+    // ---- Phase 4: Build individual results using combined eligible as denominator ----
     const combinedElig30 = filterToLast30Days(combinedEligible);
+    const combinedQual30 = filterToLast30Days(combinedQualifying);
     const teamDates30 = filterToLast30Days(new Set(allTeamDates));
 
-    const sortedDates = [...combinedQualifying].sort((a, b) => parseGameLogDate(b) - parseGameLogDate(a));
+    const individual = rowData.map(r => {
+        // Hits within the combined eligible pool
+        const hitsInPool = new Set();
+        r.qualifyingDates.forEach(d => { if (combinedEligible.has(d)) hitsInPool.add(d); });
+        const hits30 = filterToLast30Days(hitsInPool);
 
-    const individual = rowResults.map(r => {
-        const q30 = filterToLast30Days(r.qualifyingDates);
-        const e30 = filterToLast30Days(r.scopedDates);
         return {
             playerName: r.playerName, description: r.description,
-            seasonHits: r.qualifyingDates.size, seasonEligible: r.scopedDates.size,
-            seasonRate: r.scopedDates.size > 0 ? (r.qualifyingDates.size / r.scopedDates.size * 100).toFixed(1) : '0.0',
-            last30Hits: q30.size, last30Eligible: e30.size,
-            last30Rate: e30.size > 0 ? (q30.size / e30.size * 100).toFixed(1) : '0.0',
+            seasonHits: hitsInPool.size,
+            seasonEligible: combinedEligible.size,
+            seasonRate: combinedEligible.size > 0 ? (hitsInPool.size / combinedEligible.size * 100).toFixed(1) : '0.0',
+            last30Hits: hits30.size,
+            last30Eligible: combinedElig30.size,
+            last30Rate: combinedElig30.size > 0 ? (hits30.size / combinedElig30.size * 100).toFixed(1) : '0.0',
         };
     });
+
+    const sortedDates = [...combinedQualifying].sort((a, b) => parseGameLogDate(b) - parseGameLogDate(a));
 
     return {
         combined: {
