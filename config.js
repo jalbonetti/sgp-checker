@@ -36,14 +36,12 @@ export const TEAM_FULL_NAMES = {
     'UTA':'Utah Jazz','WAS':'Washington Wizards',
 };
 
-// Scope options for active players
 export const SCOPE_OPTIONS = [
     { id: 'all', label: 'All Games' },
     { id: 'starts', label: 'Starts' },
     { id: 'off_bench', label: 'Off Bench' },
 ];
 
-// Props for active players
 export const NUMERIC_PROPS = [
     { id: 'pts', label: 'Points', column: 'PTS' },
     { id: 'trb', label: 'Rebounds', column: 'TRB' },
@@ -64,14 +62,19 @@ export const BINARY_PROPS = [
     { id: 'td', label: 'Triple-Double', column: 'TD' },
 ];
 
+// "None" = no stat condition, just presence in scope. All scoped dates qualify.
+export const NONE_PROP = { id: 'none', label: 'None', column: null, type: 'none' };
+
+// "Does Not Play" for injured/out players
+export const INJURED_PROP = { id: 'does_not_play', label: 'Does Not Play', column: null, type: 'injured_filter' };
+
 export const ALL_PROPS = [
+    NONE_PROP,
+    { id: '_sep0', label: '───────────', type: 'separator' },
     ...NUMERIC_PROPS,
-    { id: '_sep', label: '───────────', type: 'separator' },
+    { id: '_sep1', label: '───────────', type: 'separator' },
     ...BINARY_PROPS,
 ];
-
-// Special prop for injured/out players only
-export const INJURED_PROP = { id: 'does_not_play', label: 'Does Not Play', column: null, type: 'injured_filter' };
 
 export const STARTER_POSITIONS = ['(G  )', '(F  )', '(C  )'];
 export const BENCH_POSITION = '(SUB)';
