@@ -40,6 +40,7 @@ export const SCOPE_OPTIONS = [
     { id: 'all', label: 'All Games' },
     { id: 'starts', label: 'Starts' },
     { id: 'off_bench', label: 'Off Bench' },
+    { id: 'dnp', label: 'Does Not Play' },
 ];
 
 export const NUMERIC_PROPS = [
@@ -74,8 +75,6 @@ export const ALL_PROPS = [
     ...NUMERIC_PROPS,
     { id: '_sep1', label: '───────────', type: 'separator' },
     ...BINARY_PROPS,
-    { id: '_sep2', label: '───────────', type: 'separator' },
-    INJURED_PROP,
 ];
 
 export const STARTER_POSITIONS = ['(G  )', '(F  )', '(C  )'];
