@@ -1,7 +1,8 @@
 // main.js - Same Team Prop Checker
-// - Injured players selectable with "Does Not Play" as only prop
-// - Duplicates greyed out in dropdowns (not selectable)
-// - Row: [Player] [Scope?] [Prop] [Dir?] [Value?] [X]
+// - Scope syncs across all rows for the same player
+// - Name qualifiers (Q), (P), (D), (Out), (OFS) stripped for game log lookup
+// - Injured players: "Does Not Play" only
+// - Duplicates greyed out per player+scope+prop
 
 import { injectStyles } from './styles/styles.js';
 import { CONFIG, ALL_PROPS, NUMERIC_PROPS, BINARY_PROPS, INJURED_PROP, SCOPE_OPTIONS, TEAM_FULL_NAMES } from './config.js';
@@ -11,6 +12,18 @@ import { runParlayCheck } from './services/parlayEngine.js';
 
 const state = { games: [], selectedTeam: null, roster: [], conditions: [], aliasMap: null, reverseAliasMap: null, results: null };
 const SUFFIXES = ['Jr.', 'Jr', 'Sr.', 'Sr', 'II', 'III', 'IV', 'V'];
+
+// Qualifier tags that appear in player names from BasketMatchupsPlayers
+const QUALIFIER_REGEX = /\s*\((Q|P|D|Out|OFS)\)\s*$/;
+
+/**
+ * Strip qualifier tags like (Q), (P), (D), (Out), (OFS) from a player name.
+ * "Anthony Edwards (Q)" → "Anthony Edwards"
+ * "Jakob Poeltl (P)" → "Jakob Poeltl"
+ */
+function stripQualifier(name) {
+    return (name || '').replace(QUALIFIER_REGEX, '').trim();
+}
 
 // ============================================================
 // INIT
@@ -87,13 +100,36 @@ async function onTeamSelected(team) {
 function processRoster(data, team) {
     const map = new Map();
     data.forEach(row => {
-        const name = (row['Player'] || '').trim();
-        if (!name || map.has(name)) return;
+        // displayName keeps the qualifier: "Anthony Edwards (Q)"
+        const displayName = (row['Player'] || '').trim();
+        if (!displayName || map.has(displayName)) return;
         const lineup = (row['Lineup'] || '').trim();
-        let gl = state.reverseAliasMap?.get(name) || '';
-        if (!gl) gl = constructGameLogName(name);
-        map.set(name, { displayName: name, gameLogName: gl, team, lineup,
-            isInjured: lineup === 'Injury', isStarter: lineup.includes('Starter'), isBench: lineup.includes('Bench') });
+
+        // cleanName strips the qualifier for game log lookup: "Anthony Edwards"
+        const cleanName = stripQualifier(displayName);
+
+        // Build game log name from cleanName
+        let gameLogName = '';
+        if (state.reverseAliasMap?.has(cleanName)) {
+            gameLogName = state.reverseAliasMap.get(cleanName);
+        }
+        // Also try with display name in case alias table has the qualifier version
+        if (!gameLogName && state.reverseAliasMap?.has(displayName)) {
+            gameLogName = state.reverseAliasMap.get(displayName);
+        }
+        if (!gameLogName) {
+            gameLogName = constructGameLogName(cleanName);
+        }
+
+        map.set(displayName, {
+            displayName,    // With qualifier: "Anthony Edwards (Q)"
+            cleanName,      // Without qualifier: "Anthony Edwards"
+            gameLogName,    // Game log format: "Edwards, Anthony"
+            team, lineup,
+            isInjured: lineup === 'Injury',
+            isStarter: lineup.includes('Starter'),
+            isBench: lineup.includes('Bench'),
+        });
     });
     return [...map.values()].sort((a, b) => {
         const ao = a.isStarter ? 0 : a.isInjured ? 2 : 1;
@@ -106,7 +142,9 @@ function constructGameLogName(name) {
     if (!name) return '';
     const t = name.trim().split(/\s+/); if (t.length < 2) return name;
     const last = t[t.length - 1];
-    if (SUFFIXES.some(s => last === s || last === s.replace('.', '')) && t.length >= 3) { const suf = t.pop(); const ln = t.pop(); return `${ln}, ${t.join(' ')} ${suf}`; }
+    if (SUFFIXES.some(s => last === s || last === s.replace('.', '')) && t.length >= 3) {
+        const suf = t.pop(); const ln = t.pop(); return `${ln}, ${t.join(' ')} ${suf}`;
+    }
     const ln = t.pop(); return `${ln}, ${t.join(' ')}`;
 }
 
@@ -136,34 +174,37 @@ function getScopeOptionsForPlayer(player) {
 }
 
 /**
- * Build a set of "used" condition signatures for duplicate detection.
- * A signature uniquely identifies a condition row. We exclude the current row
- * so it doesn't disable its own current selections.
+ * Get the current scope for a player across all existing condition rows.
+ * If this player already has rows, return their scope. Otherwise return null.
  */
-function getUsedSignatures(excludeId) {
-    const used = new Set();
-    state.conditions.forEach(c => {
-        if (c.id === excludeId) return;
-        if (!c.player || !c.propId) return;
-        // For numeric props, include direction + value in the signature
-        // For binary props, include direction
-        // For DNP, just player + propId
-        let sig = `${c.player.displayName}|${c.scope}|${c.propId}`;
-        if (c.direction) sig += `|${c.direction}`;
-        if (c.value !== null && c.value !== undefined) sig += `|${c.value}`;
-        used.add(sig);
-    });
-    return used;
+function getExistingScopeForPlayer(playerDisplayName, excludeId) {
+    for (const c of state.conditions) {
+        if (c.id === excludeId) continue;
+        if (c.player?.displayName === playerDisplayName && c.player && !c.player.isInjured) {
+            return c.scope;
+        }
+    }
+    return null;
 }
 
-/** Check if a specific prop option should be disabled for a given row */
-function isPropUsed(excludeId, playerName, scope, propId) {
-    // For simple duplicate prevention: same player + same scope + same prop = disabled
-    // (direction and value refine it further, but blocking at the prop level is cleaner UX)
+/**
+ * Sync scope across all rows for a given player.
+ * Called when any row changes its scope.
+ */
+function syncScopeForPlayer(playerDisplayName, newScope) {
+    state.conditions.forEach(c => {
+        if (c.player?.displayName === playerDisplayName && !c.player.isInjured) {
+            c.scope = newScope;
+        }
+    });
+}
+
+/** Check if a specific prop is already used by this player+scope in another row */
+function isPropUsed(excludeId, playerName, propId) {
+    // Block same player + same prop regardless of scope (since scopes are synced)
     return state.conditions.some(c =>
         c.id !== excludeId &&
         c.player?.displayName === playerName &&
-        c.scope === scope &&
         c.propId === propId
     );
 }
@@ -172,7 +213,7 @@ function validateConditions() {
     if (!state.conditions.length) return false;
     return state.conditions.every(c => {
         if (!c.player || !c.propDef) return false;
-        if (c.propId === 'does_not_play') return true; // DNP needs nothing else
+        if (c.propId === 'does_not_play') return true;
         const isBin = c.propDef.column === 'DD' || c.propDef.column === 'TD';
         if (isBin) return c.direction === 'yes' || c.direction === 'no';
         return (c.value !== null && c.value !== undefined && c.value !== '') && (c.direction === 'gte' || c.direction === 'lt');
@@ -213,7 +254,7 @@ function renderConditionRow(cond, index) {
     // Row number
     const num = document.createElement('span'); num.className = 'stc-row-number'; num.textContent = `${index + 1}`; row.appendChild(num);
 
-    // Player dropdown (all players including injured)
+    // Player dropdown
     const playerSel = document.createElement('select'); playerSel.className = 'stc-select stc-select-player';
     playerSel.innerHTML = '<option value="">Player</option>';
     const groups = { 'Starters': [], 'Bench': [], 'Injured / Out': [] };
@@ -232,15 +273,18 @@ function renderConditionRow(cond, index) {
         const p = state.roster.find(r => r.displayName === e.target.value);
         cond.player = p || null;
         if (p?.isInjured) {
-            // Auto-set to Does Not Play
             cond.scope = 'all'; cond.propId = 'does_not_play'; cond.propDef = INJURED_PROP; cond.direction = null; cond.value = null;
         } else {
-            // Reset prop if switching from injured to active
             if (cond.propId === 'does_not_play') { cond.propId = null; cond.propDef = null; cond.direction = null; cond.value = null; }
-            // Reset scope if invalid
             if (p) {
-                const allowed = getScopeOptionsForPlayer(p);
-                if (!allowed.some(s => s.id === cond.scope)) cond.scope = allowed[0]?.id || 'all';
+                // Check if this player already has a scope set in other rows — sync to it
+                const existingScope = getExistingScopeForPlayer(p.displayName, cond.id);
+                if (existingScope) {
+                    cond.scope = existingScope;
+                } else {
+                    const allowed = getScopeOptionsForPlayer(p);
+                    if (!allowed.some(s => s.id === cond.scope)) cond.scope = allowed[0]?.id || 'all';
+                }
             }
         }
         renderConditionsPanel(document.getElementById('stc-conditions-section'));
@@ -248,13 +292,13 @@ function renderConditionRow(cond, index) {
     row.appendChild(playerSel);
 
     if (isInjuredPlayer) {
-        // Injured: show "Does Not Play" as a static label (no other options)
-        const dnpLabel = document.createElement('select'); dnpLabel.className = 'stc-select stc-select-condition';
-        dnpLabel.innerHTML = '<option value="does_not_play" selected>Does Not Play</option>';
-        dnpLabel.disabled = false; // It's the only option but still looks like a dropdown
-        row.appendChild(dnpLabel);
+        // Injured: "Does Not Play" as only option
+        const dnpSel = document.createElement('select'); dnpSel.className = 'stc-select stc-select-condition';
+        dnpSel.innerHTML = '<option value="does_not_play" selected>Does Not Play</option>';
+        row.appendChild(dnpSel);
+
     } else if (cond.player) {
-        // Active player: Scope dropdown
+        // Scope dropdown (synced across all rows for this player)
         const scopeOpts = getScopeOptionsForPlayer(cond.player);
         if (scopeOpts.length > 0) {
             const scopeSel = document.createElement('select'); scopeSel.className = 'stc-select stc-select-scope';
@@ -264,17 +308,15 @@ function renderConditionRow(cond, index) {
                 scopeSel.appendChild(opt);
             });
             scopeSel.addEventListener('change', e => {
-                cond.scope = e.target.value;
-                // Check if current prop is now a duplicate with new scope
-                if (cond.propId && isPropUsed(cond.id, cond.player.displayName, cond.scope, cond.propId)) {
-                    cond.propId = null; cond.propDef = null; cond.direction = null; cond.value = null;
-                }
+                const newScope = e.target.value;
+                // Sync this scope to ALL rows for this player
+                syncScopeForPlayer(cond.player.displayName, newScope);
                 renderConditionsPanel(document.getElementById('stc-conditions-section'));
             });
             row.appendChild(scopeSel);
         }
 
-        // Prop dropdown with duplicate greying
+        // Prop dropdown with duplicate greying (per player, regardless of scope since scopes are synced)
         const propSel = document.createElement('select'); propSel.className = 'stc-select stc-select-condition';
         propSel.innerHTML = '<option value="">Prop</option>';
         ALL_PROPS.forEach(p => {
@@ -283,8 +325,7 @@ function renderConditionRow(cond, index) {
             else {
                 opt.value = p.id; opt.textContent = p.label;
                 if (cond.propId === p.id) opt.selected = true;
-                // Disable if this player+scope+prop is already used in another row
-                if (isPropUsed(cond.id, cond.player?.displayName, cond.scope, p.id)) {
+                if (isPropUsed(cond.id, cond.player?.displayName, p.id)) {
                     opt.disabled = true;
                     opt.textContent = `${p.label} (used)`;
                 }
@@ -313,8 +354,15 @@ function renderConditionRow(cond, index) {
                 const valIn = document.createElement('input'); valIn.type = 'number'; valIn.className = 'stc-input stc-input-value';
                 valIn.min = 0; valIn.max = CONFIG.MAX_STAT_VALUE; valIn.placeholder = '0';
                 if (cond.value !== null && cond.value !== undefined) valIn.value = cond.value;
-                valIn.addEventListener('input', e => { let v = parseInt(e.target.value); if (isNaN(v) || v < 0) v = 0; if (v > CONFIG.MAX_STAT_VALUE) v = CONFIG.MAX_STAT_VALUE; cond.value = v; e.target.value = v || ''; });
-                valIn.addEventListener('change', () => { const b = document.getElementById('stc-check-btn'); if (b) b.disabled = !validateConditions(); });
+                valIn.addEventListener('input', e => {
+                    let v = parseInt(e.target.value);
+                    if (isNaN(v) || v < 0) v = 0;
+                    if (v > CONFIG.MAX_STAT_VALUE) v = CONFIG.MAX_STAT_VALUE;
+                    cond.value = v; e.target.value = v || '';
+                });
+                valIn.addEventListener('change', () => {
+                    const b = document.getElementById('stc-check-btn'); if (b) b.disabled = !validateConditions();
+                });
                 row.appendChild(valIn);
             } else {
                 const dirSel = document.createElement('select'); dirSel.className = 'stc-select stc-select-direction';
