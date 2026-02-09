@@ -1,8 +1,7 @@
 // main.js - Same Team Prop Checker
-// - "None" prop = conditionless pull, locks player from being added again
-// - Scope syncs across all rows for same player
-// - Name qualifiers stripped for game log lookup
-// - Individual denominators use combined eligible pool
+// DNP is a scope option (All Games / Starts / Off Bench / Does Not Play)
+// When scope=dnp: no prop/direction/value shown, player locked from re-add
+// Injured players auto-set to scope=dnp
 
 import { injectStyles } from './styles/styles.js';
 import { CONFIG, ALL_PROPS, NUMERIC_PROPS, BINARY_PROPS, NONE_PROP, INJURED_PROP, SCOPE_OPTIONS, TEAM_FULL_NAMES } from './config.js';
@@ -123,54 +122,64 @@ function addCondition() {
 function removeCondition(id) { state.conditions = state.conditions.filter(c => c.id !== id); renderConditionsPanel(document.getElementById('stc-conditions-section')); }
 
 function findPropDef(propId) {
-    if (propId === 'does_not_play') return INJURED_PROP;
     if (propId === 'none') return NONE_PROP;
     return [...NUMERIC_PROPS, ...BINARY_PROPS].find(p => p.id === propId) || null;
 }
 
+/**
+ * Get scope options for a player.
+ * All active players get All Games / Starts|Bench (based on lineup) / Does Not Play.
+ * Injured players only get Does Not Play.
+ */
 function getScopeOptionsForPlayer(p) {
-    if (!p || p.isInjured) return [];
+    if (!p) return [];
+    if (p.isInjured) return SCOPE_OPTIONS.filter(s => s.id === 'dnp');
     if (p.isStarter) return SCOPE_OPTIONS.filter(s => s.id !== 'off_bench');
     if (p.isBench) return SCOPE_OPTIONS.filter(s => s.id !== 'starts');
     return SCOPE_OPTIONS;
 }
 
 function getExistingScopeForPlayer(displayName, excludeId) {
-    for (const c of state.conditions) { if (c.id !== excludeId && c.player?.displayName === displayName && !c.player.isInjured) return c.scope; }
+    for (const c of state.conditions) {
+        if (c.id !== excludeId && c.player?.displayName === displayName) return c.scope;
+    }
     return null;
 }
 
 function syncScopeForPlayer(displayName, newScope) {
-    state.conditions.forEach(c => { if (c.player?.displayName === displayName && !c.player.isInjured) c.scope = newScope; });
+    state.conditions.forEach(c => {
+        if (c.player?.displayName === displayName) {
+            c.scope = newScope;
+            // If switching to DNP, clear prop/direction/value
+            if (newScope === 'dnp') {
+                c.propId = 'does_not_play'; c.propDef = INJURED_PROP;
+                c.direction = null; c.value = null;
+            }
+            // If switching away from DNP and prop was DNP, reset prop
+            if (newScope !== 'dnp' && c.propId === 'does_not_play') {
+                c.propId = null; c.propDef = null; c.direction = null; c.value = null;
+            }
+        }
+    });
 }
 
-/** Check if a player has "None" selected in any row (locks them out from new rows) */
-function playerHasNone(displayName) {
-    return state.conditions.some(c => c.player?.displayName === displayName && c.propId === 'none');
-}
-
-/** Check if a prop is already used by this player in another row */
 function isPropUsed(excludeId, playerName, propId) {
     return state.conditions.some(c => c.id !== excludeId && c.player?.displayName === playerName && c.propId === propId);
 }
 
-/** Check if a player should be disabled in the player dropdown of a new row */
+/** Player is locked from re-add if they have None or DNP scope in another row */
 function isPlayerLocked(displayName, excludeId) {
-    // Locked if this player has "None" or "Does Not Play" in any other row
-    return state.conditions.some(c => c.id !== excludeId && c.player?.displayName === displayName && (c.propId === 'none' || c.propId === 'does_not_play'));
-    // Also locked if injured player already has a DNP row
-}
-
-/** Check if injured player already has a row */
-function injuredPlayerUsed(displayName, excludeId) {
-    return state.conditions.some(c => c.id !== excludeId && c.player?.displayName === displayName && c.propId === 'does_not_play');
+    return state.conditions.some(c => c.id !== excludeId && c.player?.displayName === displayName &&
+        (c.propId === 'none' || c.scope === 'dnp'));
 }
 
 function validateConditions() {
     if (!state.conditions.length) return false;
     return state.conditions.every(c => {
         if (!c.player) return false;
-        if (c.propId === 'does_not_play') return true;
+        // DNP scope = valid as-is
+        if (c.scope === 'dnp') return true;
+        // None prop = valid as-is
         if (c.propId === 'none') return true;
         if (!c.propDef) return false;
         const isBin = c.propDef.column === 'DD' || c.propDef.column === 'TD';
@@ -204,7 +213,7 @@ function renderConditionsPanel(container) {
 
 function renderConditionRow(cond, index) {
     const row = document.createElement('div'); row.className = 'stc-condition-row';
-    const isInj = cond.player?.isInjured;
+    const isDNP = cond.scope === 'dnp';
 
     // Row number
     row.appendChild(Object.assign(document.createElement('span'), { className: 'stc-row-number', textContent: `${index + 1}` }));
@@ -219,8 +228,7 @@ function renderConditionRow(cond, index) {
         const og = document.createElement('optgroup'); og.label = gName;
         players.forEach(p => {
             const opt = document.createElement('option'); opt.value = p.displayName;
-            // Lock player if they have "None" in another row, or injured player already has DNP row
-            const locked = isPlayerLocked(p.displayName, cond.id) || (p.isInjured && injuredPlayerUsed(p.displayName, cond.id));
+            const locked = isPlayerLocked(p.displayName, cond.id);
             if (locked) { opt.disabled = true; opt.textContent = `${p.displayName} (locked)`; }
             else { opt.textContent = p.displayName; }
             if (cond.player?.displayName === p.displayName) opt.selected = true;
@@ -231,26 +239,46 @@ function renderConditionRow(cond, index) {
     playerSel.addEventListener('change', e => {
         const p = state.roster.find(r => r.displayName === e.target.value);
         cond.player = p || null;
-        if (p?.isInjured) { cond.scope = 'all'; cond.propId = 'does_not_play'; cond.propDef = INJURED_PROP; cond.direction = null; cond.value = null; }
-        else {
-            if (cond.propId === 'does_not_play') { cond.propId = null; cond.propDef = null; cond.direction = null; cond.value = null; }
-            if (p) {
-                const es = getExistingScopeForPlayer(p.displayName, cond.id);
-                if (es) cond.scope = es;
-                else { const allowed = getScopeOptionsForPlayer(p); if (!allowed.some(s => s.id === cond.scope)) cond.scope = allowed[0]?.id || 'all'; }
+        if (p?.isInjured) {
+            // Injured → force DNP scope
+            cond.scope = 'dnp'; cond.propId = 'does_not_play'; cond.propDef = INJURED_PROP; cond.direction = null; cond.value = null;
+        } else if (p) {
+            // If was DNP, reset
+            if (cond.scope === 'dnp') { cond.scope = 'all'; cond.propId = null; cond.propDef = null; cond.direction = null; cond.value = null; }
+            // Sync to existing scope for this player
+            const es = getExistingScopeForPlayer(p.displayName, cond.id);
+            if (es) {
+                cond.scope = es;
+                if (es === 'dnp') { cond.propId = 'does_not_play'; cond.propDef = INJURED_PROP; cond.direction = null; cond.value = null; }
+            } else {
+                const allowed = getScopeOptionsForPlayer(p);
+                if (!allowed.some(s => s.id === cond.scope)) cond.scope = allowed[0]?.id || 'all';
             }
         }
         renderConditionsPanel(document.getElementById('stc-conditions-section'));
     });
     row.appendChild(playerSel);
 
-    if (isInj) {
-        // Injured: Does Not Play only
-        const dnp = document.createElement('select'); dnp.className = 'stc-select stc-select-condition';
-        dnp.innerHTML = '<option value="does_not_play" selected>Does Not Play</option>'; row.appendChild(dnp);
-    } else if (cond.player) {
-        // If active player selected "Does Not Play", show it simply like injured
-        if (cond.propId === 'does_not_play') {
+    if (cond.player) {
+        // Scope dropdown (always shown — includes DNP for all players)
+        const scopeOpts = getScopeOptionsForPlayer(cond.player);
+        if (scopeOpts.length > 0) {
+            const scopeSel = document.createElement('select'); scopeSel.className = 'stc-select stc-select-scope';
+            scopeOpts.forEach(s => {
+                const o = document.createElement('option'); o.value = s.id; o.textContent = s.label;
+                if (cond.scope === s.id) o.selected = true;
+                scopeSel.appendChild(o);
+            });
+            scopeSel.addEventListener('change', e => {
+                syncScopeForPlayer(cond.player.displayName, e.target.value);
+                renderConditionsPanel(document.getElementById('stc-conditions-section'));
+            });
+            row.appendChild(scopeSel);
+        }
+
+        // If NOT DNP scope, show prop/direction/value
+        if (!isDNP) {
+            // Prop dropdown
             const propSel = document.createElement('select'); propSel.className = 'stc-select stc-select-condition';
             propSel.innerHTML = '<option value="">Prop</option>';
             ALL_PROPS.forEach(p => {
@@ -265,7 +293,7 @@ function renderConditionRow(cond, index) {
             });
             propSel.addEventListener('change', e => {
                 cond.propId = e.target.value; cond.propDef = findPropDef(e.target.value);
-                if (cond.propId === 'none' || cond.propId === 'does_not_play') { cond.direction = null; cond.value = null; }
+                if (cond.propId === 'none') { cond.direction = null; cond.value = null; }
                 else if (cond.propDef) {
                     const isBin = cond.propDef.column === 'DD' || cond.propDef.column === 'TD';
                     if (isBin) { cond.direction = 'yes'; cond.value = null; } else { cond.direction = 'gte'; cond.value = null; }
@@ -273,61 +301,28 @@ function renderConditionRow(cond, index) {
                 renderConditionsPanel(document.getElementById('stc-conditions-section'));
             });
             row.appendChild(propSel);
-            // No scope, direction, or value for DNP
-        } else {
-        // Scope dropdown
-        const scopeOpts = getScopeOptionsForPlayer(cond.player);
-        if (scopeOpts.length > 0) {
-            const scopeSel = document.createElement('select'); scopeSel.className = 'stc-select stc-select-scope';
-            scopeOpts.forEach(s => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.label; if (cond.scope === s.id) o.selected = true; scopeSel.appendChild(o); });
-            scopeSel.addEventListener('change', e => { syncScopeForPlayer(cond.player.displayName, e.target.value); renderConditionsPanel(document.getElementById('stc-conditions-section')); });
-            row.appendChild(scopeSel);
-        }
 
-        // Prop dropdown
-        const propSel = document.createElement('select'); propSel.className = 'stc-select stc-select-condition';
-        propSel.innerHTML = '<option value="">Prop</option>';
-        ALL_PROPS.forEach(p => {
-            const opt = document.createElement('option');
-            if (p.type === 'separator') { opt.disabled = true; opt.textContent = p.label; }
-            else {
-                opt.value = p.id; opt.textContent = p.label;
-                if (cond.propId === p.id) opt.selected = true;
-                if (isPropUsed(cond.id, cond.player?.displayName, p.id)) { opt.disabled = true; opt.textContent = `${p.label} (used)`; }
-            }
-            propSel.appendChild(opt);
-        });
-        propSel.addEventListener('change', e => {
-            cond.propId = e.target.value; cond.propDef = findPropDef(e.target.value);
-            if (cond.propId === 'none' || cond.propId === 'does_not_play') { cond.direction = null; cond.value = null; }
-            else if (cond.propDef) {
+            // Direction + value (not for None)
+            if (cond.propDef && cond.propId !== 'none') {
                 const isBin = cond.propDef.column === 'DD' || cond.propDef.column === 'TD';
-                if (isBin) { cond.direction = 'yes'; cond.value = null; } else { cond.direction = 'gte'; cond.value = null; }
-            } else { cond.direction = null; cond.value = null; }
-            renderConditionsPanel(document.getElementById('stc-conditions-section'));
-        });
-        row.appendChild(propSel);
-
-        // Direction + value (not for None or DNP)
-        if (cond.propDef && cond.propId !== 'does_not_play' && cond.propId !== 'none') {
-            const isBin = cond.propDef.column === 'DD' || cond.propDef.column === 'TD';
-            if (!isBin) {
-                const dirSel = document.createElement('select'); dirSel.className = 'stc-select stc-select-direction';
-                dirSel.innerHTML = `<option value="gte" ${cond.direction === 'gte' ? 'selected' : ''}>≥</option><option value="lt" ${cond.direction === 'lt' ? 'selected' : ''}>&lt;</option>`;
-                dirSel.addEventListener('change', e => { cond.direction = e.target.value; }); row.appendChild(dirSel);
-                const valIn = document.createElement('input'); valIn.type = 'number'; valIn.className = 'stc-input stc-input-value';
-                valIn.min = 0; valIn.max = CONFIG.MAX_STAT_VALUE; valIn.placeholder = '0';
-                if (cond.value !== null && cond.value !== undefined) valIn.value = cond.value;
-                valIn.addEventListener('input', e => { let v = parseInt(e.target.value); if (isNaN(v) || v < 0) v = 0; if (v > CONFIG.MAX_STAT_VALUE) v = CONFIG.MAX_STAT_VALUE; cond.value = v; e.target.value = v || ''; });
-                valIn.addEventListener('change', () => { const b = document.getElementById('stc-check-btn'); if (b) b.disabled = !validateConditions(); });
-                row.appendChild(valIn);
-            } else {
-                const dirSel = document.createElement('select'); dirSel.className = 'stc-select stc-select-direction';
-                dirSel.innerHTML = `<option value="yes" ${cond.direction === 'yes' ? 'selected' : ''}>Yes</option><option value="no" ${cond.direction === 'no' ? 'selected' : ''}>No</option>`;
-                dirSel.addEventListener('change', e => { cond.direction = e.target.value; }); row.appendChild(dirSel);
+                if (!isBin) {
+                    const dirSel = document.createElement('select'); dirSel.className = 'stc-select stc-select-direction';
+                    dirSel.innerHTML = `<option value="gte" ${cond.direction === 'gte' ? 'selected' : ''}>≥</option><option value="lt" ${cond.direction === 'lt' ? 'selected' : ''}>&lt;</option>`;
+                    dirSel.addEventListener('change', e => { cond.direction = e.target.value; }); row.appendChild(dirSel);
+                    const valIn = document.createElement('input'); valIn.type = 'number'; valIn.className = 'stc-input stc-input-value';
+                    valIn.min = 0; valIn.max = CONFIG.MAX_STAT_VALUE; valIn.placeholder = '0';
+                    if (cond.value !== null && cond.value !== undefined) valIn.value = cond.value;
+                    valIn.addEventListener('input', e => { let v = parseInt(e.target.value); if (isNaN(v) || v < 0) v = 0; if (v > CONFIG.MAX_STAT_VALUE) v = CONFIG.MAX_STAT_VALUE; cond.value = v; e.target.value = v || ''; });
+                    valIn.addEventListener('change', () => { const b = document.getElementById('stc-check-btn'); if (b) b.disabled = !validateConditions(); });
+                    row.appendChild(valIn);
+                } else {
+                    const dirSel = document.createElement('select'); dirSel.className = 'stc-select stc-select-direction';
+                    dirSel.innerHTML = `<option value="yes" ${cond.direction === 'yes' ? 'selected' : ''}>Yes</option><option value="no" ${cond.direction === 'no' ? 'selected' : ''}>No</option>`;
+                    dirSel.addEventListener('change', e => { cond.direction = e.target.value; }); row.appendChild(dirSel);
+                }
             }
         }
-        } // close else (non-DNP active player)
+        // If DNP scope: nothing else shown after the scope dropdown
     }
 
     const rmBtn = document.createElement('button'); rmBtn.className = 'stc-btn-remove'; rmBtn.innerHTML = '&#x2715;'; rmBtn.title = 'Remove';
