@@ -104,7 +104,7 @@ export async function runParlayCheck(conditions, teamAbbrev) {
         playerLogs.forEach(log => logsByDate.set(log.Date, log));
         const allTeamDateSet = new Set(allTeamDates);
 
-        if (cond.propId === 'does_not_play') {
+        if (cond.scope === 'dnp' || cond.propId === 'does_not_play') {
             const qualifyingDates = new Set();
             allTeamDateSet.forEach(d => { if (!logsByDate.has(d)) qualifyingDates.add(d); });
             rowData.push({
