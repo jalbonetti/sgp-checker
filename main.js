@@ -206,6 +206,14 @@ function constructNBAGameLogName(name) {
 
 function processHockeyRoster(data, team) {
     const map = new Map();
+
+    // Debug: log first row keys and sample
+    if (data.length > 0) {
+        console.log('🏒 Roster sample keys:', Object.keys(data[0]));
+        console.log('🏒 Roster sample row:', JSON.stringify(data[0]).substring(0, 300));
+        console.log('🏒 Name map size:', state.nameMap?.size || 0);
+    }
+
     data.forEach(row => {
         const rawName = (row['Skater Name'] || '').trim();
         if (!rawName) return;
@@ -225,6 +233,8 @@ function processHockeyRoster(data, team) {
         if (nameInfo) {
             gameLogName = nameInfo.gameLogName || cleanName;
             playerId = nameInfo.playerId || null;
+        } else {
+            console.warn(`🏒 No NormalNames entry for "${cleanName}"`);
         }
 
         // Display name: show injury status if present
@@ -243,6 +253,10 @@ function processHockeyRoster(data, team) {
             isBench: false,
         });
     });
+
+    // Debug: log a few resolved players
+    const sample = [...map.values()].slice(0, 3);
+    sample.forEach(p => console.log(`🏒 Roster: "${p.cleanName}" → gameLog="${p.gameLogName}", PID=${p.playerId}`));
 
     return [...map.values()].sort((a, b) => {
         // Healthy first, then DTD, then injured
