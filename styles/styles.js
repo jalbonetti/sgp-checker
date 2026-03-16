@@ -28,6 +28,12 @@ export function injectStyles() {
         .stc-subtitle { font-size: 13px; color: var(--stc-text-muted); margin: 0; }
         .stc-section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--stc-text-muted); margin-bottom: 8px; }
 
+        /* ---- Sport Tabs ---- */
+        .stc-sport-tabs { display: flex; justify-content: center; gap: 4px; margin-bottom: 20px; background: var(--stc-bg-card); border: 1px solid var(--stc-border); border-radius: var(--stc-radius-lg); padding: 4px; max-width: 260px; margin-left: auto; margin-right: auto; }
+        .stc-sport-tab { padding: 8px 24px; border: none; border-radius: var(--stc-radius); background: transparent; color: var(--stc-text-muted); font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all var(--stc-transition); letter-spacing: 0.3px; flex: 1; text-align: center; }
+        .stc-sport-tab:hover { color: var(--stc-text-secondary); background: var(--stc-bg-row-hover); }
+        .stc-sport-tab.active { background: var(--stc-accent); color: #fff; box-shadow: 0 2px 8px var(--stc-accent-glow); }
+
         .stc-team-grid { display: grid; grid-template-columns: repeat(15, 1fr); gap: 6px; }
         .stc-team-btn { padding: 6px 0; width: 100%; border: 1px solid var(--stc-border); border-radius: var(--stc-radius); background: var(--stc-bg-card); color: var(--stc-text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; transition: all var(--stc-transition); text-align: center; }
         .stc-team-btn:hover { border-color: var(--stc-border-focus); background: var(--stc-bg-row-hover); color: var(--stc-text-primary); }
@@ -86,7 +92,6 @@ export function injectStyles() {
         .stc-result-stat-value { font-size: 26px; font-weight: 700; color: var(--stc-text-primary); line-height: 1.1; }
         .stc-result-stat-detail { font-size: 12px; color: var(--stc-text-secondary); margin-top: 2px; }
 
-        /* Muted style for Team Games context stat */
         .stc-result-stat-muted .stc-result-stat-value { font-size: 20px; color: var(--stc-text-secondary); }
         .stc-result-stat-muted .stc-result-stat-label { color: var(--stc-text-muted); }
 
