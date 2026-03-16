@@ -28,7 +28,23 @@ function filterToLast30Days(dates) {
     return filtered;
 }
 
-function evaluateProp(propDef, direction, value, logsByDate, scopedDates) {
+/** Helper: find actual column name from possible variants */
+function findColumn(sampleRow, candidates) {
+    if (!sampleRow) return candidates[0];
+    for (const c of candidates) {
+        if (c in sampleRow) return c;
+    }
+    // Try case-insensitive match against all keys
+    const keys = Object.keys(sampleRow);
+    for (const c of candidates) {
+        const lower = c.toLowerCase().replace(/[\s_]+/g, '');
+        const match = keys.find(k => k.toLowerCase().replace(/[\s_]+/g, '') === lower);
+        if (match) return match;
+    }
+    return candidates[0]; // fallback to first candidate
+}
+
+function evaluateProp(propDef, direction, value, logsByDate, scopedDates, columnMap) {
     const qualifyingDates = new Set();
 
     // "None" = all scoped dates qualify (no stat check)
@@ -37,11 +53,14 @@ function evaluateProp(propDef, direction, value, logsByDate, scopedDates) {
         return { qualifyingDates, description: 'Any Game' };
     }
 
+    // Resolve actual column name via the map
+    const actualColumn = (columnMap && columnMap[propDef.column]) || propDef.column;
+
     // All hockey props are numeric
     scopedDates.forEach(date => {
         const log = logsByDate.get(date);
         if (!log) return;
-        const sv = parseFloat(log[propDef.column]);
+        const sv = parseFloat(log[actualColumn]);
         if (isNaN(sv)) return;
         const th = parseFloat(value);
         if (direction === 'gte' && sv >= th) qualifyingDates.add(date);
@@ -58,18 +77,49 @@ export async function runHockeyParlayCheck(conditions, teamAbbrev) {
     const allTeamLogs = await fetchHockeyGameLogs(teamAbbrev);
     if (!allTeamLogs || allTeamLogs.length === 0) return { error: `No game log data found for ${teamAbbrev}.` };
 
-    const allTeamDates = [...new Set(allTeamLogs.map(r => normalizeDateKey(r.Date)))];
+    // Debug: log the actual column keys from the first row
+    if (allTeamLogs.length > 0) {
+        console.log('🏒 Game log sample keys:', Object.keys(allTeamLogs[0]));
+        console.log('🏒 Game log sample row:', JSON.stringify(allTeamLogs[0]).substring(0, 300));
+    }
 
-    // Group logs by Player ID for reliable matching
+    // Auto-detect column names (handle potential variations)
+    const sampleRow = allTeamLogs[0];
+    const COL_DATE = findColumn(sampleRow, ['Date', 'date']);
+    const COL_PLAYER_NAME = findColumn(sampleRow, ['Player Name', 'Player_Name', 'player_name', 'PlayerName']);
+    const COL_PLAYER_ID = findColumn(sampleRow, ['Player ID', 'Player_ID', 'player_id', 'PlayerID']);
+    const COL_POINTS = findColumn(sampleRow, ['Points', 'points']);
+    const COL_GOALS = findColumn(sampleRow, ['Goals', 'goals']);
+    const COL_ASSISTS = findColumn(sampleRow, ['Assists', 'assists']);
+    const COL_PPG = findColumn(sampleRow, ['Power Play Goals', 'Power_Play_Goals', 'power_play_goals', 'PowerPlayGoals']);
+    const COL_BS = findColumn(sampleRow, ['Blocked Shots', 'Blocked_Shots', 'blocked_shots', 'BlockedShots']);
+    const COL_SOG = findColumn(sampleRow, ['Shots on Goal', 'Shots_on_Goal', 'shots_on_goal', 'ShotsOnGoal']);
+
+    console.log('🏒 Detected columns:', { COL_DATE, COL_PLAYER_NAME, COL_PLAYER_ID, COL_POINTS, COL_GOALS, COL_ASSISTS, COL_PPG, COL_BS, COL_SOG });
+
+    // Build a column resolver for prop evaluation
+    const columnMap = {
+        'Points': COL_POINTS,
+        'Goals': COL_GOALS,
+        'Assists': COL_ASSISTS,
+        'Power Play Goals': COL_PPG,
+        'Blocked Shots': COL_BS,
+        'Shots on Goal': COL_SOG,
+    };
+
+    const allTeamDates = [...new Set(allTeamLogs.map(r => normalizeDateKey(r[COL_DATE])))];
+
+    // Group logs by Player ID (as string) for reliable matching
     const playerLogsByPID = new Map();
     // Also group by Player Name as fallback
     const playerLogsByName = new Map();
     allTeamLogs.forEach(log => {
-        const pid = log['Player ID'];
-        const name = log['Player Name'];
-        if (pid) {
-            if (!playerLogsByPID.has(pid)) playerLogsByPID.set(pid, []);
-            playerLogsByPID.get(pid).push(log);
+        const pid = log[COL_PLAYER_ID];
+        const name = log[COL_PLAYER_NAME];
+        if (pid != null) {
+            const pidStr = String(pid);
+            if (!playerLogsByPID.has(pidStr)) playerLogsByPID.set(pidStr, []);
+            playerLogsByPID.get(pidStr).push(log);
         }
         if (name) {
             if (!playerLogsByName.has(name)) playerLogsByName.set(name, []);
@@ -77,26 +127,34 @@ export async function runHockeyParlayCheck(conditions, teamAbbrev) {
         }
     });
 
+    console.log(`🏒 Indexed ${playerLogsByPID.size} players by ID, ${playerLogsByName.size} by name`);
+
     // ---- Phase 1: Compute per-row scoped dates and qualifying dates ----
     const rowData = [];
 
     for (const cond of conditions) {
-        // Find player's logs by Player ID first, then by gameLogName
+        // Find player's logs by Player ID first (as string), then by gameLogName
         let playerLogs = [];
-        if (cond.player.playerId) {
-            playerLogs = playerLogsByPID.get(cond.player.playerId) || [];
+        if (cond.player.playerId != null) {
+            const pidStr = String(cond.player.playerId);
+            playerLogs = playerLogsByPID.get(pidStr) || [];
+            console.log(`🏒 Matching "${cond.player.displayName}" by PID ${pidStr}: ${playerLogs.length} logs`);
         }
         if (playerLogs.length === 0 && cond.player.gameLogName) {
             playerLogs = playerLogsByName.get(cond.player.gameLogName) || [];
+            console.log(`🏒 Matching "${cond.player.displayName}" by name "${cond.player.gameLogName}": ${playerLogs.length} logs`);
             // Try fuzzy match on name
             if (playerLogs.length === 0) {
                 const fuzzy = findFuzzyMatch(cond.player.gameLogName, playerLogsByName);
-                if (fuzzy) playerLogs = playerLogsByName.get(fuzzy) || [];
+                if (fuzzy) {
+                    playerLogs = playerLogsByName.get(fuzzy) || [];
+                    console.log(`🏒 Fuzzy matched "${cond.player.gameLogName}" → "${fuzzy}": ${playerLogs.length} logs`);
+                }
             }
         }
 
         const logsByDate = new Map();
-        playerLogs.forEach(log => logsByDate.set(normalizeDateKey(log.Date), log));
+        playerLogs.forEach(log => logsByDate.set(normalizeDateKey(log[COL_DATE]), log));
         const allTeamDateSet = new Set(allTeamDates);
 
         // DNP: team dates where player has no log entry
@@ -116,7 +174,7 @@ export async function runHockeyParlayCheck(conditions, teamAbbrev) {
         const scopedDates = new Set();
         logsByDate.forEach((_, date) => scopedDates.add(date));
 
-        const propResult = evaluateProp(cond.propDef, cond.direction, cond.value, logsByDate, scopedDates);
+        const propResult = evaluateProp(cond.propDef, cond.direction, cond.value, logsByDate, scopedDates, columnMap);
 
         let description;
         if (cond.propId === 'none') {
