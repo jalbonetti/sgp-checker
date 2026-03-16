@@ -65,7 +65,7 @@ export async function fetchHockeyGameLogs(teamAbbrev) {
     try {
         console.log(`🔍 Fetching ALL hockey game logs for team "${teamAbbrev}"`);
         const data = await supabaseFetchAll(
-            'HockeyGameLogs',
+            'HockeyGameLogsSkater',
             `?Team=eq.${encodeURIComponent(teamAbbrev)}&select=*&order=Date.desc`
         );
         console.log(`✅ Fetched ${data.length} total hockey game log rows for ${teamAbbrev}`);
