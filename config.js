@@ -13,6 +13,18 @@ export const CONFIG = {
     ALIAS_CACHE_TTL: 30 * 60 * 1000,
 };
 
+// ============================================================
+// SPORT VISIBILITY — flip these to show/hide sport tabs
+// When only one sport is visible, tabs are hidden entirely.
+// ============================================================
+export const SPORT_VISIBILITY = {
+    nba: true,
+    nhl: true,
+};
+
+// ============================================================
+// BASKETBALL (NBA) CONFIG
+// ============================================================
 export const GAME_LOG_TO_NBA_ABBREV = {
     'ATL':'ATL','BOS':'BOS','BRK':'BKN','CHA':'CHA','CHI':'CHI','CLE':'CLE',
     'DAL':'DAL','DEN':'DEN','DET':'DET','GS':'GSW','HOU':'HOU','IND':'IND',
@@ -63,10 +75,7 @@ export const BINARY_PROPS = [
     { id: 'td', label: 'Triple-Double', column: 'TD' },
 ];
 
-// "None" = no stat condition, just presence in scope. All scoped dates qualify.
 export const NONE_PROP = { id: 'none', label: 'None', column: null, type: 'none' };
-
-// "Does Not Play" for injured/out players
 export const INJURED_PROP = { id: 'does_not_play', label: 'Does Not Play', column: null, type: 'injured_filter' };
 
 export const ALL_PROPS = [
