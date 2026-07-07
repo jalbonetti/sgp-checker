@@ -72,11 +72,9 @@ export const MLB_NONE_PROP = { id: 'none', label: '— Select a prop —', colum
 export const MLB_INJURED_PROP = { id: 'dnp', label: 'Does Not Play', column: null };
 
 // Scopes:
-//  - all   : denominator = every team game (a game the batter sat counts as a miss)
-//  - plays : denominator = only games the batter actually appeared in
-//  - dnp   : games the team played but the batter did not appear
+//  - plays : denominator = only games the batter actually appeared in (default)
+//  - dnp   : games the team played but the batter did not appear (no prop)
 export const MLB_SCOPE_OPTIONS = [
-  { id: 'all',   label: 'All Games' },
   { id: 'plays', label: 'Plays' },
   { id: 'dnp',   label: 'Does Not Play' },
 ];
