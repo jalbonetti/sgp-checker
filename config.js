@@ -20,6 +20,7 @@ export const CONFIG = {
 export const SPORT_VISIBILITY = {
     nba: true,
     nhl: true,
+    mlb: true,
 };
 
 // ============================================================
