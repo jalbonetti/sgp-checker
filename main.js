@@ -13,11 +13,15 @@ import { fetchHockeyGames, fetchHockeyRoster, fetchHockeyGameLogs } from './hock
 import { loadHockeyNameTable, buildHockeyReverseNameMap } from './hockey/nameResolver.js';
 import { runHockeyParlayCheck } from './hockey/parlayEngine.js';
 
+import { MLB_TEAM_FULL_NAMES, MLB_NAME_TO_CODE, MLB_ALL_PROPS, MLB_NUMERIC_PROPS, MLB_NONE_PROP, MLB_INJURED_PROP, MLB_SCOPE_OPTIONS, MLB_MAX_STAT_VALUE } from './mlb/config.js';
+import { fetchMLBGames, fetchMLBLineups, fetchMLBRoster, fetchMLBGameLogs } from './mlb/dataService.js';
+import { runMLBParlayCheck } from './mlb/parlayEngine.js';
+
 // ============================================================
 // STATE
 // ============================================================
 const state = {
-    activeSport: null, // 'nba' | 'nhl'
+    activeSport: null, // 'nba' | 'nhl' | 'mlb'
     games: [],
     selectedTeam: null,
     roster: [],
@@ -25,6 +29,7 @@ const state = {
     nameMap: null,       // alias/name map (sport-specific)
     reverseNameMap: null, // reverse lookup
     results: null,
+    mlbLineups: [],      // MLB: cached lineups (sliced per team + game leg in fetchRoster)
 };
 
 const NBA_SUFFIXES = ['Jr.', 'Jr', 'Sr.', 'Sr', 'II', 'III', 'IV', 'V'];
@@ -42,7 +47,9 @@ function parseHockeyInjury(name) {
 // SPORT ADAPTERS
 // ============================================================
 function getAdapter() {
-    return state.activeSport === 'nhl' ? NHL_ADAPTER : NBA_ADAPTER;
+    return state.activeSport === 'nhl' ? NHL_ADAPTER
+         : state.activeSport === 'mlb' ? MLB_ADAPTER
+         : NBA_ADAPTER;
 }
 
 const NBA_ADAPTER = {
@@ -175,6 +182,163 @@ const NHL_ADAPTER = {
 };
 
 // ============================================================
+// MLB ADAPTER
+// ============================================================
+// Strip a trailing "(Game N)" tag from a team/lineup string.
+function mlbStripGameTag(s) { return String(s || '').replace(/\s*\(Game\s*\d+\)\s*$/i, '').trim(); }
+function mlbGameNumOf(s) { const m = String(s || '').match(/\(Game\s*(\d+)\)/i); return m ? parseInt(m[1]) : null; }
+
+// A selection key encodes team + optional game leg: "MIL" or "MIL|2".
+function mlbKey(code, gameNum) { return gameNum ? `${code}|${gameNum}` : code; }
+function mlbParseKey(key) { const [code, gn] = String(key).split('|'); return { code, gameNum: gn ? parseInt(gn) : null }; }
+
+const MLB_ADAPTER = {
+  id: 'mlb',
+  label: 'MLB',
+  teamNames: MLB_TEAM_FULL_NAMES,
+  allProps: MLB_ALL_PROPS,
+  numericProps: MLB_NUMERIC_PROPS,
+  binaryProps: [],
+  noneProp: MLB_NONE_PROP,
+  injuredProp: MLB_INJURED_PROP,
+  scopeOptions: MLB_SCOPE_OPTIONS,
+  maxStatValue: MLB_MAX_STAT_VALUE,
+  hasBinaryProps: false,
+  usesGameEntries: true,   // tells renderTeamSelector to render team-game buttons (doubleheaders twice)
+
+  async loadInitialData() {
+    const [games, lineups] = await Promise.all([fetchMLBGames(), fetchMLBLineups()]);
+    state.games = games;
+    state.mlbLineups = lineups;   // cached; fetchRoster slices by team + game leg
+    state.nameMap = null;
+    state.reverseNameMap = null;
+  },
+
+  // Returns team-game entries from the slate: a doubleheader team appears twice.
+  // Each: { key, code, gameNum, label }.
+  gameEntries(games) {
+    const seen = new Map();  // code -> Set(gameNum)
+    (games || []).forEach(g => {
+      const matchup = g['Matchup'] || '';
+      const gameNum = mlbGameNumOf(matchup);
+      Object.entries(MLB_TEAM_FULL_NAMES).forEach(([code, full]) => {
+        if (matchup.includes(full)) {
+          if (!seen.has(code)) seen.set(code, new Set());
+          seen.get(code).add(gameNum || 1);
+        }
+      });
+    });
+    const entries = [];
+    [...seen.keys()].sort().forEach(code => {
+      const nums = [...seen.get(code)].sort((a, b) => a - b);
+      const isDh = nums.length > 1;
+      nums.forEach(n => entries.push({
+        key: mlbKey(code, isDh ? n : null),
+        code, gameNum: isDh ? n : null,
+        label: isDh ? `${code} G${n}` : code,
+      }));
+    });
+    return entries;
+  },
+
+  // Kept for compatibility with the shared disable-logic path (unused when usesGameEntries).
+  extractTeamsPlaying(games) {
+    return [...new Set(this.gameEntries(games).map(e => e.code))].sort();
+  },
+
+  async fetchRoster(key) {
+    const { code, gameNum } = mlbParseKey(key);
+    const fullName = MLB_TEAM_FULL_NAMES[code] || code;
+    const rosterRows = await fetchMLBRoster(fullName);
+    return processMLBRoster(state.mlbLineups || [], rosterRows, fullName, gameNum);
+  },
+
+  getRosterGroups(roster) {
+    const inLineup = roster.filter(p => p.inLineup);
+    const others = roster.filter(p => !p.inLineup);
+    if (roster.status === 'Confirmed') return { 'Confirmed Lineup': inLineup };
+    return { 'Projected Lineup': inLineup, 'Other Batters': others };
+  },
+
+  getScopeOptionsForPlayer(p) {
+    if (!p) return [];
+    return MLB_SCOPE_OPTIONS;   // Plays + Does Not Play for every batter
+  },
+
+  findPropDef(propId) {
+    if (propId === 'none') return MLB_NONE_PROP;
+    if (propId === 'dnp') return MLB_INJURED_PROP;
+    return MLB_NUMERIC_PROPS.find(p => p.id === propId) || null;
+  },
+
+  isBinaryProp() { return false; },
+  getDefaultDirection() { return 'gte'; },
+
+  // Friendly label for a selection key (e.g. "MIL|2" -> "Milwaukee Brewers (Game 2)").
+  displayLabel(key) { const { code, gameNum } = mlbParseKey(key); return (MLB_TEAM_FULL_NAMES[code] || code) + (gameNum ? ` (Game ${gameNum})` : ''); },
+
+  async runCheck(conditions, key) {
+    return runMLBParlayCheck(conditions, mlbParseKey(key).code);
+  },
+};
+
+// ============================================================
+// MLB ROSTER PROCESSING  (add near processNBARoster / processHockeyRoster)
+// ============================================================
+// Builds the player list for a team's game leg: the posted lineup (in batting order),
+// then all other roster batters (Position 'B'). Joined entirely by FanGraphs Player ID.
+// Returns an array (with a .status property: 'Confirmed' | 'Projected' | '').
+function processMLBRoster(allLineups, rosterRows, fullName, gameNum) {
+  // Lineup rows for this exact leg: Team is "Full Name" (single) or "Full Name (Game N)".
+  const legRows = (allLineups || []).filter(r => {
+    const t = String(r['Team'] || '').trim();
+    if (mlbStripGameTag(t) !== fullName) return false;
+    const rn = mlbGameNumOf(t);
+    return gameNum ? rn === gameNum : true;
+  });
+
+  let status = '';
+  const players = [];
+  const inLineupIds = new Set();
+
+  legRows
+    .slice()
+    .sort((a, b) => (parseInt(a['Order']) || 99) - (parseInt(b['Order']) || 99))
+    .forEach(r => {
+      const pid = String(r['Player ID'] || '').trim();
+      const name = String(r['Player'] || '').trim();
+      if (!pid || !name) return;
+      if (!status) status = String(r['Lineup Status'] || '').trim();
+      inLineupIds.add(pid);
+      players.push({
+        displayName: name, playerId: pid,
+        bats: String(r['Bats'] || '').trim(),
+        battingOrder: parseInt(r['Order']) || null,
+        inLineup: true, team: fullName,
+      });
+    });
+
+  (rosterRows || []).forEach(r => {
+    if (String(r['Position'] || '').trim().toUpperCase() !== 'B') return;   // batters only
+    const pid = String(r['Player ID'] || '').trim();
+    const name = String(r['Player'] || '').trim();
+    if (!pid || !name || inLineupIds.has(pid)) return;
+    players.push({
+      displayName: name, playerId: pid,
+      bats: String(r['Batting Hand'] || '').trim(),
+      battingOrder: null, inLineup: false, team: fullName,
+    });
+  });
+
+  // Other batters sorted alphabetically; lineup batters keep batting order (already sorted).
+  const lineup = players.filter(p => p.inLineup);
+  const others = players.filter(p => !p.inLineup).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const result = [...lineup, ...others];
+  result.status = status;
+  return result;
+}
+
+// ============================================================
 // ROSTER PROCESSING
 // ============================================================
 function processNBARoster(data, team) {
@@ -277,6 +441,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const visibleSports = [];
     if (SPORT_VISIBILITY.nba) visibleSports.push('nba');
     if (SPORT_VISIBILITY.nhl) visibleSports.push('nhl');
+    if (SPORT_VISIBILITY.mlb) visibleSports.push('mlb');
 
     if (visibleSports.length === 0) {
         root.innerHTML = '<div class="stc-error">No sports are currently enabled.</div>';
@@ -311,6 +476,7 @@ function renderApp(root) {
     const visibleSports = [];
     if (SPORT_VISIBILITY.nba) visibleSports.push({ id: 'nba', label: 'NBA' });
     if (SPORT_VISIBILITY.nhl) visibleSports.push({ id: 'nhl', label: 'NHL' });
+    if (SPORT_VISIBILITY.mlb) visibleSports.push({ id: 'mlb', label: 'MLB' });
 
     if (visibleSports.length > 1) {
         const tabContainer = document.createElement('div'); tabContainer.className = 'stc-sport-tabs'; tabContainer.id = 'stc-sport-tabs';
@@ -345,6 +511,7 @@ async function onSportTabClicked(sportId) {
     state.games = [];
     state.nameMap = null;
     state.reverseNameMap = null;
+    state.mlbLineups = [];
 
     const root = document.getElementById('stc-root');
 
@@ -374,8 +541,25 @@ async function onSportTabClicked(sportId) {
 function renderTeamSelector(c) {
     c.innerHTML = '';
     const adapter = getAdapter();
-    const tp = adapter.extractTeamsPlaying(state.games);
     const lbl = document.createElement('div'); lbl.className = 'stc-section-label'; lbl.textContent = 'Select a Team'; c.appendChild(lbl);
+
+    // MLB-style: one button per team-game entry (a doubleheader team appears twice, G1 / G2)
+    if (adapter.usesGameEntries) {
+        const entries = adapter.gameEntries(state.games);
+        if (!entries.length) { c.innerHTML += '<div class="stc-no-games">No games scheduled for today.</div>'; return; }
+        const dhGrid = document.createElement('div'); dhGrid.className = 'stc-team-grid';
+        entries.forEach(e => {
+            const b = document.createElement('button'); b.className = 'stc-team-btn';
+            b.textContent = e.label; b.title = adapter.teamNames[e.code] + (e.gameNum ? ` (Game ${e.gameNum})` : '');
+            if (state.selectedTeam === e.key) b.classList.add('active');
+            b.addEventListener('click', () => onTeamSelected(e.key));
+            dhGrid.appendChild(b);
+        });
+        c.appendChild(dhGrid);
+        return;
+    }
+
+    const tp = adapter.extractTeamsPlaying(state.games);
     if (!tp.length) { c.innerHTML += '<div class="stc-no-games">No games scheduled for today.</div>'; return; }
     const grid = document.createElement('div'); grid.className = 'stc-team-grid';
     Object.keys(adapter.teamNames).sort().forEach(a => {
@@ -395,7 +579,8 @@ async function onTeamSelected(team) {
     state.selectedTeam = team; state.conditions = []; state.results = null;
     renderTeamSelector(document.getElementById('stc-team-section'));
     const cs = document.getElementById('stc-conditions-section');
-    cs.innerHTML = `<div class="stc-loading"><div class="stc-spinner"></div><div style="margin-top:10px;">Loading ${adapter.teamNames[team]} roster...</div></div>`;
+    const teamLabel = adapter.displayLabel ? adapter.displayLabel(team) : adapter.teamNames[team];
+    cs.innerHTML = `<div class="stc-loading"><div class="stc-spinner"></div><div style="margin-top:10px;">Loading ${teamLabel} roster...</div></div>`;
     document.getElementById('stc-results-section').innerHTML = '';
     try {
         state.roster = await adapter.fetchRoster(team);
@@ -465,7 +650,8 @@ function renderConditionsPanel(container) {
     container.innerHTML = '';
     const panel = document.createElement('div'); panel.className = 'stc-conditions-panel';
     const hdr = document.createElement('div'); hdr.className = 'stc-conditions-header';
-    hdr.innerHTML = `<div class="stc-conditions-title">${adapter.teamNames[state.selectedTeam]} — Conditions</div><div class="stc-conditions-count">${state.conditions.length} / ${CONFIG.MAX_CONDITIONS}</div>`;
+    const selLabel = adapter.displayLabel ? adapter.displayLabel(state.selectedTeam) : adapter.teamNames[state.selectedTeam];
+    hdr.innerHTML = `<div class="stc-conditions-title">${selLabel} — Conditions</div><div class="stc-conditions-count">${state.conditions.length} / ${CONFIG.MAX_CONDITIONS}</div>`;
     panel.appendChild(hdr);
     state.conditions.forEach((c, i) => panel.appendChild(renderConditionRow(c, i)));
     if (state.conditions.length < CONFIG.MAX_CONDITIONS) {
