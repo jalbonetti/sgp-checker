@@ -256,13 +256,16 @@ const MLB_ADAPTER = {
   getRosterGroups(roster) {
     const inLineup = roster.filter(p => p.inLineup);
     const others = roster.filter(p => !p.inLineup);
-    if (roster.status === 'Confirmed') return { 'Confirmed Lineup': inLineup };
-    return { 'Projected Lineup': inLineup, 'Other Batters': others };
+    const lineupLabel = roster.status === 'Confirmed' ? 'Confirmed Lineup' : 'Projected Lineup';
+    // Other batters are always shown. On a Confirmed lineup they're flagged isInjured
+    // (see processMLBRoster), which forces them to Does Not Play and locks the scope.
+    return { [lineupLabel]: inLineup, 'Other Batters': others };
   },
 
   getScopeOptionsForPlayer(p) {
     if (!p) return [];
-    return MLB_SCOPE_OPTIONS;   // Plays + Does Not Play for every batter
+    if (p.isInjured) return MLB_SCOPE_OPTIONS.filter(s => s.id === 'dnp');   // Confirmed-lineup bench: DNP only, locked
+    return MLB_SCOPE_OPTIONS;
   },
 
   findPropDef(propId) {
@@ -314,7 +317,7 @@ function processMLBRoster(allLineups, rosterRows, fullName, gameNum) {
         displayName: name, playerId: pid,
         bats: String(r['Bats'] || '').trim(),
         battingOrder: parseInt(r['Order']) || null,
-        inLineup: true, team: fullName,
+        inLineup: true, isInjured: false, team: fullName,
       });
     });
 
@@ -326,7 +329,9 @@ function processMLBRoster(allLineups, rosterRows, fullName, gameNum) {
     players.push({
       displayName: name, playerId: pid,
       bats: String(r['Batting Hand'] || '').trim(),
-      battingOrder: null, inLineup: false, team: fullName,
+      battingOrder: null, inLineup: false,
+      isInjured: status === 'Confirmed',   // confirmed lineup => bench can only be "Does Not Play"
+      team: fullName,
     });
   });
 
