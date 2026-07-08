@@ -18,8 +18,8 @@ export const CONFIG = {
 // When only one sport is visible, tabs are hidden entirely.
 // ============================================================
 export const SPORT_VISIBILITY = {
-    nba: true,
-    nhl: true,
+    nba: false,
+    nhl: false,
     mlb: true,
 };
 
