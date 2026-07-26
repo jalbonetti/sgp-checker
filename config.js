@@ -19,8 +19,19 @@ export const CONFIG = {
 // ============================================================
 export const SPORT_VISIBILITY = {
     nba: false,
+    wnba: true,
     nhl: false,
     mlb: true,
+};
+
+// Tab order. Add/remove ids here to reorder the pill toggle.
+export const SPORT_ORDER = ['nba', 'wnba', 'nhl', 'mlb'];
+
+export const SPORT_LABELS = {
+    nba: 'NBA',
+    wnba: 'WNBA',
+    nhl: 'NHL',
+    mlb: 'MLB',
 };
 
 // ============================================================
