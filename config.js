@@ -25,7 +25,7 @@ export const SPORT_VISIBILITY = {
 };
 
 // Tab order. Add/remove ids here to reorder the pill toggle.
-export const SPORT_ORDER = ['nba', 'wnba', 'nhl', 'mlb'];
+export const SPORT_ORDER = ['nba', 'nhl', 'mlb', 'wnba'];
 
 export const SPORT_LABELS = {
     nba: 'NBA',
