@@ -1,12 +1,16 @@
 // main.js - Same Team Prop Checker (Multi-Sport)
-// Supports NBA and NHL with sport tab switching and visibility controls.
+// Supports NBA, WNBA, NHL and MLB with sport tab switching and visibility controls.
 // Each sport has its own adapter (config, data, engine, name resolution).
 
 import { injectStyles } from './styles/styles.js';
-import { CONFIG, SPORT_VISIBILITY, ALL_PROPS, NUMERIC_PROPS, BINARY_PROPS, NONE_PROP, INJURED_PROP, SCOPE_OPTIONS, TEAM_FULL_NAMES } from './config.js';
+import { CONFIG, SPORT_VISIBILITY, SPORT_ORDER, SPORT_LABELS, ALL_PROPS, NUMERIC_PROPS, BINARY_PROPS, NONE_PROP, INJURED_PROP, SCOPE_OPTIONS, TEAM_FULL_NAMES } from './config.js';
 import { fetchTodaysGames, fetchTeamRoster } from './services/dataService.js';
 import { loadAliasTable, buildReverseAliasMap } from './utils/nameResolver.js';
 import { runParlayCheck } from './services/parlayEngine.js';
+
+import { WNBA_TEAM_FULL_NAMES, WNBA_ALL_PROPS, WNBA_NUMERIC_PROPS, WNBA_BINARY_PROPS, WNBA_NONE_PROP, WNBA_INJURED_PROP, WNBA_SCOPE_OPTIONS, WNBA_MAX_STAT_VALUE, WNBA_ROLE_STARTER, WNBA_ROLE_BENCH, WNBA_ROLE_NOT_PLAYING, WNBA_DNP_TAGS } from './wnba/config.js';
+import { fetchWNBAMatchupPlayers } from './wnba/dataService.js';
+import { runWNBAParlayCheck } from './wnba/parlayEngine.js';
 
 import { HOCKEY_TEAM_FULL_NAMES, HOCKEY_ALL_PROPS, HOCKEY_NUMERIC_PROPS, HOCKEY_NONE_PROP, HOCKEY_INJURED_PROP, HOCKEY_SCOPE_OPTIONS, HOCKEY_DNP_INJURIES, HOCKEY_MINOR_INJURIES, HOCKEY_MAX_STAT_VALUE } from './hockey/config.js';
 import { fetchHockeyGames, fetchHockeyRoster, fetchHockeyGameLogs } from './hockey/dataService.js';
@@ -21,7 +25,7 @@ import { runMLBParlayCheck } from './mlb/parlayEngine.js';
 // STATE
 // ============================================================
 const state = {
-    activeSport: null, // 'nba' | 'nhl' | 'mlb'
+    activeSport: null, // 'nba' | 'wnba' | 'nhl' | 'mlb'
     games: [],
     selectedTeam: null,
     roster: [],
@@ -30,6 +34,7 @@ const state = {
     reverseNameMap: null, // reverse lookup
     results: null,
     mlbLineups: [],      // MLB: cached lineups (sliced per team + game leg in fetchRoster)
+    wnbaMatchupPlayers: [], // WNBA: slate + rosters in one table, cached once per load
 };
 
 const NBA_SUFFIXES = ['Jr.', 'Jr', 'Sr.', 'Sr', 'II', 'III', 'IV', 'V'];
@@ -43,12 +48,17 @@ function parseHockeyInjury(name) {
     return match ? match[1] : null;
 }
 
+function getVisibleSports() {
+    return SPORT_ORDER.filter(id => SPORT_VISIBILITY[id]);
+}
+
 // ============================================================
 // SPORT ADAPTERS
 // ============================================================
 function getAdapter() {
     return state.activeSport === 'nhl' ? NHL_ADAPTER
          : state.activeSport === 'mlb' ? MLB_ADAPTER
+         : state.activeSport === 'wnba' ? WNBA_ADAPTER
          : NBA_ADAPTER;
 }
 
@@ -116,6 +126,89 @@ const NBA_ADAPTER = {
 
     async runCheck(conditions, team) {
         return runParlayCheck(conditions, team);
+    },
+};
+
+// ============================================================
+// WNBA ADAPTER
+// ============================================================
+// The slate and the rosters live in one table (WBasketMatchupsPlayers), so
+// loadInitialData fetches it once and fetchRoster just slices the cache —
+// no per-team roster request at all.
+const WNBA_ADAPTER = {
+    id: 'wnba',
+    label: 'WNBA',
+    teamNames: WNBA_TEAM_FULL_NAMES,
+    allProps: WNBA_ALL_PROPS,
+    numericProps: WNBA_NUMERIC_PROPS,
+    binaryProps: WNBA_BINARY_PROPS,
+    noneProp: WNBA_NONE_PROP,
+    injuredProp: WNBA_INJURED_PROP,
+    scopeOptions: WNBA_SCOPE_OPTIONS,
+    maxStatValue: WNBA_MAX_STAT_VALUE,
+    hasBinaryProps: true,
+
+    async loadInitialData() {
+        const rows = await fetchWNBAMatchupPlayers();
+        state.wnbaMatchupPlayers = rows;
+        state.games = rows;          // the slate is derived from these same rows
+        state.nameMap = null;        // names match the game logs exactly
+        state.reverseNameMap = null;
+    },
+
+    extractTeamsPlaying(games) {
+        const t = new Set();
+        (games || []).forEach(r => {
+            const team = (r['Team'] || '').trim();
+            if (WNBA_TEAM_FULL_NAMES[team]) t.add(team);
+        });
+        return [...t].sort();
+    },
+
+    // "DAL@POR|10:00 PM ET" -> "DAL @ POR · 10:00 PM ET", for the button tooltip.
+    matchupLabel(team) {
+        const row = (state.wnbaMatchupPlayers || []).find(r => (r['Team'] || '').trim() === team);
+        const raw = row ? String(row['Matchup ID'] || '').trim() : '';
+        if (!raw) return WNBA_TEAM_FULL_NAMES[team] || team;
+        const [teams, time] = raw.split('|');
+        const pretty = (teams || '').replace('@', ' @ ');
+        return `${WNBA_TEAM_FULL_NAMES[team] || team} — ${pretty}${time ? ` · ${time.trim()}` : ''}`;
+    },
+
+    async fetchRoster(team) {
+        const rows = (state.wnbaMatchupPlayers || []).filter(r => (r['Team'] || '').trim() === team);
+        return processWNBARoster(rows, team);
+    },
+
+    getRosterGroups(roster) {
+        const groups = { 'Starters': [], 'Bench': [], 'Injured / Out': [] };
+        roster.forEach(p => { groups[p.isStarter ? 'Starters' : p.isInjured ? 'Injured / Out' : 'Bench'].push(p); });
+        return groups;
+    },
+
+    getScopeOptionsForPlayer(p) {
+        if (!p) return [];
+        if (p.isInjured) return WNBA_SCOPE_OPTIONS.filter(s => s.id === 'dnp');
+        if (p.isStarter) return WNBA_SCOPE_OPTIONS.filter(s => s.id !== 'off_bench');
+        if (p.isBench) return WNBA_SCOPE_OPTIONS.filter(s => s.id !== 'starts');
+        return WNBA_SCOPE_OPTIONS;
+    },
+
+    findPropDef(propId) {
+        if (propId === 'none') return WNBA_NONE_PROP;
+        return [...WNBA_NUMERIC_PROPS, ...WNBA_BINARY_PROPS].find(p => p.id === propId) || null;
+    },
+
+    isBinaryProp(propDef) {
+        return propDef && (propDef.column === 'DD' || propDef.column === 'TD');
+    },
+
+    getDefaultDirection(propDef) {
+        return this.isBinaryProp(propDef) ? 'yes' : 'gte';
+    },
+
+    async runCheck(conditions, team) {
+        return runWNBAParlayCheck(conditions, team);
     },
 };
 
@@ -286,7 +379,57 @@ const MLB_ADAPTER = {
 };
 
 // ============================================================
-// MLB ROSTER PROCESSING  (add near processNBARoster / processHockeyRoster)
+// WNBA ROSTER PROCESSING
+// ============================================================
+// Role is 'Starter' | 'Bench' | 'Not Playing'. A 'Not Playing' role (or an
+// OUT/OFS tag) locks the player to Does Not Play, exactly like an NBA
+// 'Injury' lineup value. Any other tag (e.g. a game-time-decision flag) is
+// shown next to her name but still allows the full prop menu.
+// Names need no alias table: WBasketMatchupsPlayers.Player and
+// WNBAGameLogs."Player Name" use identical spellings.
+function processWNBARoster(rows, team) {
+    const map = new Map();
+
+    (rows || []).forEach(row => {
+        const name = String(row['Player'] || '').trim();
+        if (!name || map.has(name)) return;
+
+        const role = String(row['Role'] || '').trim();
+        const tag = String(row['Tag'] || '').trim();
+        const status = String(row['Status'] || '').trim();
+        const injury = String(row['Injury'] || '').trim();
+        const position = String(row['Position'] || '').trim();
+
+        const isNotPlaying = role === WNBA_ROLE_NOT_PLAYING;
+        const isDnpTag = !!tag && WNBA_DNP_TAGS.includes(tag.toUpperCase());
+        const isInjured = isNotPlaying || isDnpTag;
+
+        map.set(name, {
+            displayName: tag ? `${name} (${tag})` : name,
+            cleanName: name,
+            gameLogName: name,
+            team,
+            position,
+            role,
+            injury,
+            status,
+            tag,
+            isInjured,
+            isStarter: !isInjured && role === WNBA_ROLE_STARTER,
+            isBench: !isInjured && role === WNBA_ROLE_BENCH,
+            isMinorTag: !isInjured && !!tag,
+        });
+    });
+
+    return [...map.values()].sort((a, b) => {
+        const order = p => (p.isStarter ? 0 : p.isInjured ? 2 : 1);
+        const ao = order(a), bo = order(b);
+        return ao !== bo ? ao - bo : a.displayName.localeCompare(b.displayName);
+    });
+}
+
+// ============================================================
+// MLB ROSTER PROCESSING
 // ============================================================
 // Builds the player list for a team's game leg: the posted lineup (in batting order),
 // then all other roster batters (Position 'B'). Joined entirely by FanGraphs Player ID.
@@ -442,11 +585,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     injectStyles();
     const root = document.getElementById('stc-root'); if (!root) return;
 
-    // Determine which sports are visible
-    const visibleSports = [];
-    if (SPORT_VISIBILITY.nba) visibleSports.push('nba');
-    if (SPORT_VISIBILITY.nhl) visibleSports.push('nhl');
-    if (SPORT_VISIBILITY.mlb) visibleSports.push('mlb');
+    const visibleSports = getVisibleSports();
 
     if (visibleSports.length === 0) {
         root.innerHTML = '<div class="stc-error">No sports are currently enabled.</div>';
@@ -478,10 +617,7 @@ function renderApp(root) {
     root.appendChild(h);
 
     // Sport tabs (only if multiple sports visible)
-    const visibleSports = [];
-    if (SPORT_VISIBILITY.nba) visibleSports.push({ id: 'nba', label: 'NBA' });
-    if (SPORT_VISIBILITY.nhl) visibleSports.push({ id: 'nhl', label: 'NHL' });
-    if (SPORT_VISIBILITY.mlb) visibleSports.push({ id: 'mlb', label: 'MLB' });
+    const visibleSports = getVisibleSports().map(id => ({ id, label: SPORT_LABELS[id] || id.toUpperCase() }));
 
     if (visibleSports.length > 1) {
         const tabContainer = document.createElement('div'); tabContainer.className = 'stc-sport-tabs'; tabContainer.id = 'stc-sport-tabs';
@@ -517,6 +653,7 @@ async function onSportTabClicked(sportId) {
     state.nameMap = null;
     state.reverseNameMap = null;
     state.mlbLineups = [];
+    state.wnbaMatchupPlayers = [];
 
     const root = document.getElementById('stc-root');
 
@@ -568,7 +705,8 @@ function renderTeamSelector(c) {
     if (!tp.length) { c.innerHTML += '<div class="stc-no-games">No games scheduled for today.</div>'; return; }
     const grid = document.createElement('div'); grid.className = 'stc-team-grid';
     Object.keys(adapter.teamNames).sort().forEach(a => {
-        const btn = document.createElement('button'); btn.className = 'stc-team-btn'; btn.textContent = a; btn.title = adapter.teamNames[a];
+        const btn = document.createElement('button'); btn.className = 'stc-team-btn'; btn.textContent = a;
+        btn.title = adapter.matchupLabel ? adapter.matchupLabel(a) : adapter.teamNames[a];
         if (!tp.includes(a)) btn.classList.add('disabled');
         else { if (state.selectedTeam === a) btn.classList.add('active'); btn.addEventListener('click', () => onTeamSelected(a)); }
         grid.appendChild(btn);
