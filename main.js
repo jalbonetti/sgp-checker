@@ -57,6 +57,36 @@ function getVisibleSports() {
 }
 
 // ============================================================
+// [STARTED-GAME HIDING] shared ET clock helpers
+// ============================================================
+// WNBA (for now): today's tip time is the "|..." half of Matchup ID
+// ("DAL@POR|10:00 PM ET"). A team whose game has started drops out of the
+// selector (same convention as MLB and football). NBA/NHL get the same
+// treatment when they're ported to this format. Unreadable/missing times
+// fail OPEN (team stays listed).
+function etNowMinutes() {
+    const now = new Date();
+    const y = now.getUTCFullYear();
+    const mar = new Date(Date.UTC(y, 2, 1)), nov = new Date(Date.UTC(y, 10, 1));
+    const dstStart = Date.UTC(y, 2, 1 + ((7 - mar.getUTCDay()) % 7) + 7, 7);
+    const dstEnd = Date.UTC(y, 10, 1 + ((7 - nov.getUTCDay()) % 7), 6);
+    const off = now.getTime() >= dstStart && now.getTime() < dstEnd ? 4 : 5;
+    const et = new Date(now.getTime() - off * 3600 * 1000);
+    return et.getUTCHours() * 60 + et.getUTCMinutes();
+}
+function clockToMinutes(str) {
+    const m = String(str || '').match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (!m) return null;
+    let h = parseInt(m[1], 10) % 12; if (m[3].toUpperCase() === 'PM') h += 12;
+    return h * 60 + parseInt(m[2], 10);
+}
+function hasStarted(clockStr) {
+    const mins = clockToMinutes(clockStr);
+    return mins != null && mins <= etNowMinutes();
+}
+
+
+// ============================================================
 // SPORT ADAPTERS
 // ============================================================
 // [FOOTBALL EDIT 3/6] football adapters are built from the shared factory
@@ -158,6 +188,7 @@ const WNBA_ADAPTER = {
     scopeOptions: WNBA_SCOPE_OPTIONS,
     maxStatValue: WNBA_MAX_STAT_VALUE,
     hasBinaryProps: true,
+    hidesNonPlaying: true,   // [STARTED-GAME HIDING] selector shows only not-yet-started teams
 
     async loadInitialData() {
         const rows = await fetchWNBAMatchupPlayers();
@@ -171,7 +202,10 @@ const WNBA_ADAPTER = {
         const t = new Set();
         (games || []).forEach(r => {
             const team = (r['Team'] || '').trim();
-            if (WNBA_TEAM_FULL_NAMES[team]) t.add(team);
+            if (!WNBA_TEAM_FULL_NAMES[team]) return;
+            const time = String(r['Matchup ID'] || '').split('|')[1] || '';
+            if (hasStarted(time)) return;   // [STARTED-GAME HIDING]
+            t.add(team);
         });
         return [...t].sort();
     },
@@ -727,9 +761,13 @@ function renderTeamSelector(c) {
 
     const tp = adapter.extractTeamsPlaying(state.games);
     if (!tp.length) { c.innerHTML += '<div class="stc-no-games">No games scheduled for today.</div>'; return; }
-    // [FULL NAMES] buttons show the full team name (keys stay abbreviations), sorted by name
+    // [FULL NAMES] labels are full team names (keys stay abbreviations), sorted by name.
+    // [STARTED-GAME HIDING] adapters with hidesNonPlaying render ONLY teams playing
+    // today whose game hasn't started (WNBA, like MLB/football); the others keep
+    // the full list with non-playing teams greyed out until they're ported.
     const grid = document.createElement('div'); grid.className = 'stc-team-grid';
-    Object.keys(adapter.teamNames).sort((x, y) => String(adapter.teamNames[x]).localeCompare(String(adapter.teamNames[y]))).forEach(a => {
+    const codes = adapter.hidesNonPlaying ? tp.slice() : Object.keys(adapter.teamNames);
+    codes.sort((x, y) => String(adapter.teamNames[x] || x).localeCompare(String(adapter.teamNames[y] || y))).forEach(a => {
         const btn = document.createElement('button'); btn.className = 'stc-team-btn'; btn.textContent = adapter.teamNames[a] || a;
         btn.title = adapter.matchupLabel ? adapter.matchupLabel(a) : adapter.teamNames[a];
         if (!tp.includes(a)) btn.classList.add('disabled');
