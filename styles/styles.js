@@ -34,19 +34,16 @@ export function injectStyles() {
         .stc-sport-tab:hover { color: var(--stc-text-secondary); background: var(--stc-bg-row-hover); }
         .stc-sport-tab.active { background: var(--stc-accent); color: #fff; box-shadow: 0 2px 8px var(--stc-accent-glow); }
 
-        .stc-team-grid { display: grid; grid-template-columns: repeat(15, 1fr); gap: 6px; }
-        .stc-team-btn { padding: 6px 0; width: 100%; border: 1px solid var(--stc-border); border-radius: var(--stc-radius); background: var(--stc-bg-card); color: var(--stc-text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; transition: all var(--stc-transition); text-align: center; }
+        /* Every sport's selector shows FULL team names, so the grid auto-fills
+           readable columns (the old 15-across abbreviation grid is retired). */
+        .stc-team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+        .stc-team-btn { padding: 7px 8px; width: 100%; border: 1px solid var(--stc-border); border-radius: var(--stc-radius); background: var(--stc-bg-card); color: var(--stc-text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; transition: all var(--stc-transition); text-align: center; white-space: normal; line-height: 1.2; }
         .stc-team-btn:hover { border-color: var(--stc-border-focus); background: var(--stc-bg-row-hover); color: var(--stc-text-primary); }
         .stc-team-btn.active { border-color: var(--stc-accent); background: var(--stc-accent-light); color: var(--stc-accent); box-shadow: 0 0 8px var(--stc-accent-glow); }
         .stc-team-btn.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
-        /* Football: entries render under a date label with full team names — give
-           them auto-sized columns instead of the 15-across abbreviation grid.
-           The sibling selector scopes this to date-headed grids only, so the
-           MLB/WNBA/NBA/NHL abbreviation grids are untouched. */
+        /* Football: date-section headers above each day's teams. */
         .stc-day-label { margin-top: 12px; }
-        .stc-day-label + .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-        .stc-day-label + .stc-team-grid .stc-team-btn { padding: 7px 8px; white-space: normal; line-height: 1.2; }
 
         .stc-no-games { text-align: center; padding: 24px; color: var(--stc-text-muted); font-size: 14px; }
 
@@ -127,13 +124,11 @@ export function injectStyles() {
         .stc-error { background: var(--stc-danger-bg); border: 1px solid rgba(248,113,113,0.3); border-radius: var(--stc-radius); padding: 12px 16px; color: var(--stc-danger); font-size: 13px; margin-top: 12px; }
 
         @media (max-width: 1024px) {
-            .stc-team-grid { grid-template-columns: repeat(10, 1fr); }
-            .stc-day-label + .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+            .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
         }
         @media (max-width: 768px) {
             #stc-root { padding: 0 12px; } .stc-title { font-size: 18px; }
-            .stc-team-grid { grid-template-columns: repeat(6, 1fr); }
-            .stc-day-label + .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+            .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
             .stc-condition-row { gap: 6px; }
             .stc-select-player { min-width: 120px; max-width: 100%; flex: 1 1 100%; }
             .stc-select-scope { min-width: 90px; flex: 1; }
@@ -146,10 +141,8 @@ export function injectStyles() {
             .stc-dates-list { columns: 2; }
         }
         @media (max-width: 480px) {
-            .stc-team-grid { grid-template-columns: repeat(5, 1fr); }
-            .stc-day-label + .stc-team-grid { grid-template-columns: repeat(2, 1fr); }
-            .stc-team-btn { padding: 5px 0; font-size: 11px; }
-            .stc-day-label + .stc-team-grid .stc-team-btn { padding: 6px 6px; }
+            .stc-team-grid { grid-template-columns: repeat(2, 1fr); }
+            .stc-team-btn { padding: 6px 6px; font-size: 11px; }
             .stc-dates-list { columns: 1; }
         }
     `;
