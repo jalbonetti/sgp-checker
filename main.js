@@ -60,11 +60,13 @@ function getVisibleSports() {
 // ============================================================
 // [STARTED-GAME HIDING] shared ET clock helpers
 // ============================================================
-// WNBA (for now): today's tip time is the "|..." half of Matchup ID
-// ("DAL@POR|10:00 PM ET"). A team whose game has started drops out of the
-// selector (same convention as MLB and football). NBA/NHL get the same
-// treatment when they're ported to this format. Unreadable/missing times
-// fail OPEN (team stays listed).
+// Client-side started-game filter, shared convention across MLB / WNBA /
+// NFL / NCAAF: a team whose game has started drops out of the selector, so the
+// board empties after the last game of the day rather than showing a stale
+// last matchup. WNBA reads the "|..." half of Matchup ID ("DAL@POR|10:00 PM
+// ET"); MLB reads BaseballMatchupsGame."Gametime"; football parses full
+// ET stamps in its own adapter. NBA/NHL get the same treatment when ported.
+// Unreadable/missing times fail OPEN (team stays listed).
 function etNowMinutes() {
     const now = new Date();
     const y = now.getUTCFullYear();
@@ -358,6 +360,7 @@ const MLB_ADAPTER = {
   gameEntries(games) {
     const seen = new Map();  // code -> Set(gameNum)
     (games || []).forEach(g => {
+      if (hasStarted(g['Gametime'])) return;   // [STARTED-GAME HIDING] same convention as WNBA/football
       const matchup = g['Matchup'] || '';
       const gameNum = mlbGameNumOf(matchup);
       Object.entries(MLB_TEAM_FULL_NAMES).forEach(([code, full]) => {
