@@ -333,13 +333,15 @@ const MLB_ADAPTER = {
       });
     });
     const entries = [];
-    [...seen.keys()].sort().forEach(code => {
+    // [FULL NAMES] labels are full team names, sorted by name
+    [...seen.keys()].sort((a, b) => (MLB_TEAM_FULL_NAMES[a] || a).localeCompare(MLB_TEAM_FULL_NAMES[b] || b)).forEach(code => {
       const nums = [...seen.get(code)].sort((a, b) => a - b);
       const isDh = nums.length > 1;
+      const full = MLB_TEAM_FULL_NAMES[code] || code;
       nums.forEach(n => entries.push({
         key: mlbKey(code, isDh ? n : null),
         code, gameNum: isDh ? n : null,
-        label: isDh ? `${code} G${n}` : code,
+        label: isDh ? `${full} (Game ${n})` : full,
       }));
     });
     return entries;
@@ -725,9 +727,10 @@ function renderTeamSelector(c) {
 
     const tp = adapter.extractTeamsPlaying(state.games);
     if (!tp.length) { c.innerHTML += '<div class="stc-no-games">No games scheduled for today.</div>'; return; }
+    // [FULL NAMES] buttons show the full team name (keys stay abbreviations), sorted by name
     const grid = document.createElement('div'); grid.className = 'stc-team-grid';
-    Object.keys(adapter.teamNames).sort().forEach(a => {
-        const btn = document.createElement('button'); btn.className = 'stc-team-btn'; btn.textContent = a;
+    Object.keys(adapter.teamNames).sort((x, y) => String(adapter.teamNames[x]).localeCompare(String(adapter.teamNames[y]))).forEach(a => {
+        const btn = document.createElement('button'); btn.className = 'stc-team-btn'; btn.textContent = adapter.teamNames[a] || a;
         btn.title = adapter.matchupLabel ? adapter.matchupLabel(a) : adapter.teamNames[a];
         if (!tp.includes(a)) btn.classList.add('disabled');
         else { if (state.selectedTeam === a) btn.classList.add('active'); btn.addEventListener('click', () => onTeamSelected(a)); }
