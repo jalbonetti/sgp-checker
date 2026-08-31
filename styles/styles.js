@@ -29,8 +29,8 @@ export function injectStyles() {
         .stc-section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--stc-text-muted); margin-bottom: 8px; }
 
         /* ---- Sport Tabs ---- */
-        .stc-sport-tabs { display: flex; justify-content: center; gap: 4px; margin-bottom: 20px; background: var(--stc-bg-card); border: 1px solid var(--stc-border); border-radius: var(--stc-radius-lg); padding: 4px; max-width: 260px; margin-left: auto; margin-right: auto; }
-        .stc-sport-tab { padding: 8px 24px; border: none; border-radius: var(--stc-radius); background: transparent; color: var(--stc-text-muted); font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all var(--stc-transition); letter-spacing: 0.3px; flex: 1; text-align: center; }
+        .stc-sport-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin: 0 auto 20px; width: fit-content; max-width: 100%; background: var(--stc-bg-card); border: 1px solid var(--stc-border); border-radius: var(--stc-radius-lg); padding: 4px; }
+        .stc-sport-tab { padding: 8px 20px; border: none; border-radius: var(--stc-radius); background: transparent; color: var(--stc-text-muted); font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all var(--stc-transition); letter-spacing: 0.3px; flex: 0 0 auto; text-align: center; }
         .stc-sport-tab:hover { color: var(--stc-text-secondary); background: var(--stc-bg-row-hover); }
         .stc-sport-tab.active { background: var(--stc-accent); color: #fff; box-shadow: 0 2px 8px var(--stc-accent-glow); }
 
@@ -39,6 +39,15 @@ export function injectStyles() {
         .stc-team-btn:hover { border-color: var(--stc-border-focus); background: var(--stc-bg-row-hover); color: var(--stc-text-primary); }
         .stc-team-btn.active { border-color: var(--stc-accent); background: var(--stc-accent-light); color: var(--stc-accent); box-shadow: 0 0 8px var(--stc-accent-glow); }
         .stc-team-btn.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+
+        /* Football: entries render under a date label with full team names — give
+           them auto-sized columns instead of the 15-across abbreviation grid.
+           The sibling selector scopes this to date-headed grids only, so the
+           MLB/WNBA/NBA/NHL abbreviation grids are untouched. */
+        .stc-day-label { margin-top: 12px; }
+        .stc-day-label + .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+        .stc-day-label + .stc-team-grid .stc-team-btn { padding: 7px 8px; white-space: normal; line-height: 1.2; }
+
         .stc-no-games { text-align: center; padding: 24px; color: var(--stc-text-muted); font-size: 14px; }
 
         .stc-conditions-panel { background: var(--stc-bg-card); border: 1px solid var(--stc-border); border-radius: var(--stc-radius-lg); padding: 16px; margin-bottom: 20px; }
@@ -117,10 +126,14 @@ export function injectStyles() {
 
         .stc-error { background: var(--stc-danger-bg); border: 1px solid rgba(248,113,113,0.3); border-radius: var(--stc-radius); padding: 12px 16px; color: var(--stc-danger); font-size: 13px; margin-top: 12px; }
 
-        @media (max-width: 1024px) { .stc-team-grid { grid-template-columns: repeat(10, 1fr); } }
+        @media (max-width: 1024px) {
+            .stc-team-grid { grid-template-columns: repeat(10, 1fr); }
+            .stc-day-label + .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+        }
         @media (max-width: 768px) {
             #stc-root { padding: 0 12px; } .stc-title { font-size: 18px; }
             .stc-team-grid { grid-template-columns: repeat(6, 1fr); }
+            .stc-day-label + .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
             .stc-condition-row { gap: 6px; }
             .stc-select-player { min-width: 120px; max-width: 100%; flex: 1 1 100%; }
             .stc-select-scope { min-width: 90px; flex: 1; }
@@ -134,7 +147,9 @@ export function injectStyles() {
         }
         @media (max-width: 480px) {
             .stc-team-grid { grid-template-columns: repeat(5, 1fr); }
+            .stc-day-label + .stc-team-grid { grid-template-columns: repeat(2, 1fr); }
             .stc-team-btn { padding: 5px 0; font-size: 11px; }
+            .stc-day-label + .stc-team-grid .stc-team-btn { padding: 6px 6px; }
             .stc-dates-list { columns: 1; }
         }
     `;
