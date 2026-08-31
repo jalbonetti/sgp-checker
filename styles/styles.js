@@ -42,8 +42,13 @@ export function injectStyles() {
         .stc-team-btn.active { border-color: var(--stc-accent); background: var(--stc-accent-light); color: var(--stc-accent); box-shadow: 0 0 8px var(--stc-accent-glow); }
         .stc-team-btn.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
 
-        /* Football: date-section headers above each day's teams. */
+        /* Football: collapsible date-section headers above each day's teams. */
         .stc-day-label { margin-top: 12px; }
+        .stc-day-toggle { cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none; padding: 6px 0; }
+        .stc-day-toggle:hover { color: var(--stc-text-secondary); }
+        .stc-day-toggle .stc-chevron { font-size: 9px; transition: transform var(--stc-transition); }
+        .stc-day-toggle .stc-chevron.open { transform: rotate(90deg); }
+        .stc-day-count { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--stc-text-muted); opacity: .8; }
 
         .stc-no-games { text-align: center; padding: 24px; color: var(--stc-text-muted); font-size: 14px; }
 
