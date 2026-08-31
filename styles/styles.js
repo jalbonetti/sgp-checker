@@ -1,4 +1,16 @@
 // styles/styles.js - Same Team Prop Checker Styles
+//
+// PALETTE REBUILD — cream site background
+// ---------------------------------------
+// The tool is now a self-contained dark "housing" card (same #1E1830 purple as
+// the data tables, expanders, and blog reading cards), so it no longer depends
+// on the page behind it being dark. Tokens are aligned to the brand system:
+//   housing purple  #1E1830  (was #1a1028)
+//   card tier       #2A2040  (was #231536) — one step lighter than the housing
+//   teal accent     #6FD5DC  (was Tailwind cyan #06b6d4)
+//   text primary    #F2EFF8, secondary #B9AED6, muted #8F86A6
+// Text on teal fills is now dark ink (#0F2A2D) instead of white — white on
+// #6FD5DC fails contrast; ink on teal is what the sport pages' active tabs use.
 
 export function injectStyles() {
     if (document.getElementById('stc-styles')) return;
@@ -6,20 +18,30 @@ export function injectStyles() {
     style.id = 'stc-styles';
     style.textContent = `
         #stc-root {
-            --stc-accent: #06b6d4; --stc-accent-hover: #0891b2;
-            --stc-accent-light: rgba(6,182,212,0.12); --stc-accent-glow: rgba(6,182,212,0.25);
-            --stc-bg-primary: #1a1028; --stc-bg-card: #231536;
-            --stc-bg-input: #2d1b45; --stc-bg-input-focus: #351f52;
-            --stc-bg-row-hover: #33204d;
-            --stc-border: rgba(255,255,255,0.08); --stc-border-focus: rgba(6,182,212,0.5);
-            --stc-text-primary: #e8e0f0; --stc-text-secondary: #a89bbe;
-            --stc-text-muted: #7a6b8f; --stc-text-accent: #06b6d4;
+            --stc-accent: #6FD5DC; --stc-accent-hover: #57C6CE;
+            --stc-accent-light: rgba(111,213,220,0.12); --stc-accent-glow: rgba(111,213,220,0.28);
+            --stc-on-accent: #0F2A2D;
+            --stc-bg-primary: #1E1830; --stc-bg-card: #2A2040;
+            --stc-bg-input: #332852; --stc-bg-input-focus: #3B2F5E;
+            --stc-bg-row-hover: #3A2D57;
+            --stc-border: rgba(255,255,255,0.10); --stc-border-focus: rgba(111,213,220,0.55);
+            --stc-housing-border: rgba(143,134,166,0.35);
+            --stc-text-primary: #F2EFF8; --stc-text-secondary: #B9AED6;
+            --stc-text-muted: #8F86A6; --stc-text-accent: #6FD5DC;
             --stc-danger: #f87171; --stc-danger-bg: rgba(248,113,113,0.1);
             --stc-warning: #fbbf24; --stc-warning-bg: rgba(251,191,36,0.1);
             --stc-radius: 8px; --stc-radius-lg: 12px;
             --stc-transition: 150ms ease;
         }
-        #stc-root { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color: var(--stc-text-primary); max-width: 900px; margin: 0 auto; padding: 0 16px; }
+        /* The root is the housing: dark card on the cream page. */
+        #stc-root {
+            font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+            color: var(--stc-text-primary);
+            background: var(--stc-bg-primary);
+            border: 1px solid var(--stc-housing-border);
+            border-radius: 16px;
+            max-width: 900px; margin: 0 auto; padding: 28px 24px 32px;
+        }
         #stc-root *, #stc-root *::before, #stc-root *::after { box-sizing: border-box; }
 
         .stc-header { text-align: center; margin-bottom: 24px; }
@@ -32,7 +54,7 @@ export function injectStyles() {
         .stc-sport-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin: 0 auto 20px; width: fit-content; max-width: 100%; background: var(--stc-bg-card); border: 1px solid var(--stc-border); border-radius: var(--stc-radius-lg); padding: 4px; }
         .stc-sport-tab { padding: 8px 20px; border: none; border-radius: var(--stc-radius); background: transparent; color: var(--stc-text-muted); font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all var(--stc-transition); letter-spacing: 0.3px; flex: 0 0 auto; text-align: center; }
         .stc-sport-tab:hover { color: var(--stc-text-secondary); background: var(--stc-bg-row-hover); }
-        .stc-sport-tab.active { background: var(--stc-accent); color: #fff; box-shadow: 0 2px 8px var(--stc-accent-glow); }
+        .stc-sport-tab.active { background: var(--stc-accent); color: var(--stc-on-accent); box-shadow: 0 2px 8px var(--stc-accent-glow); }
 
         /* Every sport's selector shows FULL team names, so the grid auto-fills
            readable columns (the old 15-across abbreviation grid is retired). */
@@ -65,9 +87,9 @@ export function injectStyles() {
 
         .stc-select, .stc-input { padding: 7px 10px; border: 1px solid var(--stc-border); border-radius: 6px; background: var(--stc-bg-input); color: var(--stc-text-primary); font-size: 13px; font-family: inherit; transition: border-color var(--stc-transition), background var(--stc-transition); outline: none; }
         .stc-select:focus, .stc-input:focus { border-color: var(--stc-border-focus); background: var(--stc-bg-input-focus); }
-        .stc-select { cursor: pointer; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a89bbe' d='M2 4l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 26px; }
-        .stc-select option { background: #2d1b45; color: #e8e0f0; }
-        .stc-select option:disabled { color: #7a6b8f; }
+        .stc-select { cursor: pointer; -webkit-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23b9aed6' d='M2 4l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 26px; }
+        .stc-select option { background: #332852; color: #F2EFF8; }
+        .stc-select option:disabled { color: #8F86A6; }
 
         .stc-select-player { flex: 1; min-width: 140px; max-width: 200px; }
         .stc-select-scope { min-width: 100px; }
@@ -82,7 +104,7 @@ export function injectStyles() {
 
         .stc-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
         .stc-btn { padding: 9px 18px; border: none; border-radius: var(--stc-radius); font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all var(--stc-transition); }
-        .stc-btn-primary { background: var(--stc-accent); color: #fff; }
+        .stc-btn-primary { background: var(--stc-accent); color: var(--stc-on-accent); }
         .stc-btn-primary:hover { background: var(--stc-accent-hover); box-shadow: 0 0 12px var(--stc-accent-glow); }
         .stc-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
         .stc-btn-secondary { background: transparent; border: 1px solid var(--stc-border); color: var(--stc-text-secondary); }
@@ -132,7 +154,7 @@ export function injectStyles() {
             .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
         }
         @media (max-width: 768px) {
-            #stc-root { padding: 0 12px; } .stc-title { font-size: 18px; }
+            #stc-root { padding: 20px 14px 24px; border-radius: 12px; } .stc-title { font-size: 18px; }
             .stc-team-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
             .stc-condition-row { gap: 6px; }
             .stc-select-player { min-width: 120px; max-width: 100%; flex: 1 1 100%; }
