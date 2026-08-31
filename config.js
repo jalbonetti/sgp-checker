@@ -17,22 +17,9 @@ export const CONFIG = {
 // SPORT VISIBILITY — flip these to show/hide sport tabs
 // When only one sport is visible, tabs are hidden entirely.
 // ============================================================
-export const SPORT_VISIBILITY = {
-    nba: false,
-    wnba: true,
-    nhl: false,
-    mlb: true,
-};
-
-// Tab order. Add/remove ids here to reorder the pill toggle.
-export const SPORT_ORDER = ['nba', 'nhl', 'mlb', 'wnba'];
-
-export const SPORT_LABELS = {
-    nba: 'NBA',
-    wnba: 'WNBA',
-    nhl: 'NHL',
-    mlb: 'MLB',
-};
+export const SPORT_VISIBILITY = { nba: false, wnba: true, nhl: false, mlb: true, nfl: true, ncaaf: true };
+export const SPORT_ORDER = ['mlb', 'nba', 'ncaaf', 'nfl', 'nhl', 'wnba'];
+export const SPORT_LABELS = { nba: 'NBA', wnba: 'WNBA', nhl: 'NHL', mlb: 'MLB', nfl: 'NFL', ncaaf: 'NCAAF' };
 
 // ============================================================
 // BASKETBALL (NBA) CONFIG
