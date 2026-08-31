@@ -1,5 +1,5 @@
 // main.js - Same Team Prop Checker (Multi-Sport)
-// Supports NBA, WNBA, NHL and MLB with sport tab switching and visibility controls.
+// Supports NBA, WNBA, NHL, MLB, NFL and NCAAF with sport tab switching and visibility controls.
 // Each sport has its own adapter (config, data, engine, name resolution).
 
 import { injectStyles } from './styles/styles.js';
@@ -21,11 +21,14 @@ import { MLB_TEAM_FULL_NAMES, MLB_NAME_TO_CODE, MLB_ALL_PROPS, MLB_NUMERIC_PROPS
 import { fetchMLBGames, fetchMLBLineups, fetchMLBRoster, fetchMLBGameLogs } from './mlb/dataService.js';
 import { runMLBParlayCheck } from './mlb/parlayEngine.js';
 
+// [FOOTBALL EDIT 1/6] one factory serves NFL + NCAAF
+import { makeFootballAdapter } from './football/adapter.js';
+
 // ============================================================
 // STATE
 // ============================================================
 const state = {
-    activeSport: null, // 'nba' | 'wnba' | 'nhl' | 'mlb'
+    activeSport: null, // 'nba' | 'wnba' | 'nhl' | 'mlb' | 'nfl' | 'ncaaf'
     games: [],
     selectedTeam: null,
     roster: [],
@@ -35,6 +38,7 @@ const state = {
     results: null,
     mlbLineups: [],      // MLB: cached lineups (sliced per team + game leg in fetchRoster)
     wnbaMatchupPlayers: [], // WNBA: slate + rosters in one table, cached once per load
+    footballPlayers: [], // NFL/NCAAF: matchups-player rows, cached once per load  [FOOTBALL EDIT 2/6]
 };
 
 const NBA_SUFFIXES = ['Jr.', 'Jr', 'Sr.', 'Sr', 'II', 'III', 'IV', 'V'];
@@ -55,10 +59,17 @@ function getVisibleSports() {
 // ============================================================
 // SPORT ADAPTERS
 // ============================================================
+// [FOOTBALL EDIT 3/6] football adapters are built from the shared factory
+// (they need `state`, so they're constructed here rather than imported ready-made)
+const NFL_ADAPTER = makeFootballAdapter('nfl', state);
+const NCAAF_ADAPTER = makeFootballAdapter('ncaaf', state);
+
 function getAdapter() {
     return state.activeSport === 'nhl' ? NHL_ADAPTER
          : state.activeSport === 'mlb' ? MLB_ADAPTER
          : state.activeSport === 'wnba' ? WNBA_ADAPTER
+         : state.activeSport === 'nfl' ? NFL_ADAPTER
+         : state.activeSport === 'ncaaf' ? NCAAF_ADAPTER
          : NBA_ADAPTER;
 }
 
@@ -654,6 +665,7 @@ async function onSportTabClicked(sportId) {
     state.reverseNameMap = null;
     state.mlbLineups = [];
     state.wnbaMatchupPlayers = [];
+    state.footballPlayers = [];   // [FOOTBALL EDIT 4/6]
 
     const root = document.getElementById('stc-root');
 
@@ -685,19 +697,29 @@ function renderTeamSelector(c) {
     const adapter = getAdapter();
     const lbl = document.createElement('div'); lbl.className = 'stc-section-label'; lbl.textContent = 'Select a Team'; c.appendChild(lbl);
 
-    // MLB-style: one button per team-game entry (a doubleheader team appears twice, G1 / G2)
+    // MLB-style: one button per team-game entry (a doubleheader team appears twice, G1 / G2).
+    // [FOOTBALL EDIT 5/6] Entries may carry an optional `group` (football: game
+    // date) — grouped entries render under a date header; ungrouped entries
+    // (MLB) render exactly as before in a single grid. Entries may also carry
+    // their own `title` (football: "Away @ Home · time ET" tooltip).
     if (adapter.usesGameEntries) {
         const entries = adapter.gameEntries(state.games);
         if (!entries.length) { c.innerHTML += '<div class="stc-no-games">No games scheduled for today.</div>'; return; }
-        const dhGrid = document.createElement('div'); dhGrid.className = 'stc-team-grid';
-        entries.forEach(e => {
-            const b = document.createElement('button'); b.className = 'stc-team-btn';
-            b.textContent = e.label; b.title = adapter.teamNames[e.code] + (e.gameNum ? ` (Game ${e.gameNum})` : '');
-            if (state.selectedTeam === e.key) b.classList.add('active');
-            b.addEventListener('click', () => onTeamSelected(e.key));
-            dhGrid.appendChild(b);
+        const groups = new Map();
+        entries.forEach(e => { const g = e.group || ''; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(e); });
+        groups.forEach((list, g) => {
+            if (g) { const hd = document.createElement('div'); hd.className = 'stc-section-label stc-day-label'; hd.textContent = g; c.appendChild(hd); }
+            const dhGrid = document.createElement('div'); dhGrid.className = 'stc-team-grid';
+            list.forEach(e => {
+                const b = document.createElement('button'); b.className = 'stc-team-btn';
+                b.textContent = e.label;
+                b.title = e.title || (adapter.teamNames[e.code] + (e.gameNum ? ` (Game ${e.gameNum})` : ''));
+                if (state.selectedTeam === e.key) b.classList.add('active');
+                b.addEventListener('click', () => onTeamSelected(e.key));
+                dhGrid.appendChild(b);
+            });
+            c.appendChild(dhGrid);
         });
-        c.appendChild(dhGrid);
         return;
     }
 
@@ -957,14 +979,17 @@ async function onCheckClicked() {
 // ============================================================
 function renderResults(container, results) {
     container.innerHTML = '';
+    // [FOOTBALL EDIT 6/6] the "recent" window label comes from the adapter
+    // (football = "Last 5 Games"); every other sport keeps "Last 30 Days".
+    const recentLabel = getAdapter().recentLabel || 'Last 30 Days';
     const w = document.createElement('div'); w.className = 'stc-results';
     const combined = document.createElement('div'); combined.className = 'stc-results-combined';
     combined.innerHTML = `
         <div class="stc-results-combined-title">Combined Result &mdash; All ${results.conditionCount} Condition${results.conditionCount > 1 ? 's' : ''} Met</div>
         <div class="stc-result-stats">
             <div class="stc-result-stat"><div class="stc-result-stat-label">Eligible Games</div><div class="stc-result-stat-value">${results.combined.rate}%</div><div class="stc-result-stat-detail">${results.combined.hits} of ${results.combined.eligible} games</div></div>
-            <div class="stc-result-stat"><div class="stc-result-stat-label">Last 30 Days</div><div class="stc-result-stat-value">${results.combined.last30Rate}%</div><div class="stc-result-stat-detail">${results.combined.last30Hits} of ${results.combined.last30Eligible} games</div></div>
-            <div class="stc-result-stat stc-result-stat-muted"><div class="stc-result-stat-label">Team Games</div><div class="stc-result-stat-value">${results.teamGames.season}</div><div class="stc-result-stat-detail">${results.teamGames.last30} in last 30 days</div></div>
+            <div class="stc-result-stat"><div class="stc-result-stat-label">${recentLabel}</div><div class="stc-result-stat-value">${results.combined.last30Rate}%</div><div class="stc-result-stat-detail">${results.combined.last30Hits} of ${results.combined.last30Eligible} games</div></div>
+            <div class="stc-result-stat stc-result-stat-muted"><div class="stc-result-stat-label">Team Games</div><div class="stc-result-stat-value">${results.teamGames.season}</div><div class="stc-result-stat-detail">${results.teamGames.last30} in ${recentLabel.toLowerCase()}</div></div>
         </div>`;
     if (results.combined.dates?.length > 0) {
         const toggle = document.createElement('div'); toggle.className = 'stc-dates-toggle';
@@ -984,7 +1009,7 @@ function renderResults(container, results) {
         const hRow = document.createElement('div'); hRow.className = 'stc-individual-row'; hRow.style.borderBottom = '2px solid var(--stc-border)';
         hRow.innerHTML = `<div class="stc-individual-label" style="font-weight:600;color:var(--stc-text-muted);font-size:11px;">CONDITION</div>
             <div class="stc-individual-values"><div class="stc-individual-season" style="font-weight:600;color:var(--stc-text-muted);font-size:11px;">SEASON</div>
-            <div class="stc-individual-last30" style="font-weight:600;color:var(--stc-text-muted);font-size:11px;">LAST 30 DAYS</div></div>`;
+            <div class="stc-individual-last30" style="font-weight:600;color:var(--stc-text-muted);font-size:11px;">${recentLabel.toUpperCase()}</div></div>`;
         body.appendChild(hRow);
         results.individual.forEach(r => {
             const row = document.createElement('div'); row.className = 'stc-individual-row';
