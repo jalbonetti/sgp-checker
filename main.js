@@ -39,6 +39,7 @@ const state = {
     mlbLineups: [],      // MLB: cached lineups (sliced per team + game leg in fetchRoster)
     wnbaMatchupPlayers: [], // WNBA: slate + rosters in one table, cached once per load
     footballPlayers: [], // NFL/NCAAF: matchups-player rows, cached once per load  [FOOTBALL EDIT 2/6]
+    openGroups: null,    // [COLLAPSIBLE DATES] Set of expanded date-section labels (null = default: first open)
 };
 
 const NBA_SUFFIXES = ['Jr.', 'Jr', 'Sr.', 'Sr', 'II', 'III', 'IV', 'V'];
@@ -702,6 +703,7 @@ async function onSportTabClicked(sportId) {
     state.mlbLineups = [];
     state.wnbaMatchupPlayers = [];
     state.footballPlayers = [];   // [FOOTBALL EDIT 4/6]
+    state.openGroups = null;      // [COLLAPSIBLE DATES]
 
     const root = document.getElementById('stc-root');
 
@@ -743,8 +745,25 @@ function renderTeamSelector(c) {
         if (!entries.length) { c.innerHTML += '<div class="stc-no-games">No games scheduled for today.</div>'; return; }
         const groups = new Map();
         entries.forEach(e => { const g = e.group || ''; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(e); });
+        // [COLLAPSIBLE DATES] date sections are expandables: the earliest is open by
+        // default, the rest collapsed; selecting a team collapses everything so the
+        // conditions panel lands right under the headers (see onTeamSelected).
+        const hasGroups = [...groups.keys()].some(g => g);
+        if (hasGroups && state.openGroups === null) state.openGroups = new Set([[...groups.keys()].find(g => g)]);
         groups.forEach((list, g) => {
-            if (g) { const hd = document.createElement('div'); hd.className = 'stc-section-label stc-day-label'; hd.textContent = g; c.appendChild(hd); }
+            const open = !g || (state.openGroups && state.openGroups.has(g));
+            if (g) {
+                const hd = document.createElement('div'); hd.className = 'stc-section-label stc-day-label stc-day-toggle';
+                const sel = list.find(e => e.key === state.selectedTeam);
+                hd.innerHTML = `<span class="stc-chevron${open ? ' open' : ''}">&#9654;</span> ${g} <span class="stc-day-count">${list.length} teams${sel ? ' · ' + sel.label + ' selected' : ''}</span>`;
+                hd.addEventListener('click', () => {
+                    if (!state.openGroups) state.openGroups = new Set();
+                    if (state.openGroups.has(g)) state.openGroups.delete(g); else state.openGroups.add(g);
+                    renderTeamSelector(c);
+                });
+                c.appendChild(hd);
+            }
+            if (!open) return;
             const dhGrid = document.createElement('div'); dhGrid.className = 'stc-team-grid';
             list.forEach(e => {
                 const b = document.createElement('button'); b.className = 'stc-team-btn';
@@ -783,8 +802,10 @@ function renderTeamSelector(c) {
 async function onTeamSelected(team) {
     const adapter = getAdapter();
     state.selectedTeam = team; state.conditions = []; state.results = null;
+    if (state.openGroups) state.openGroups = new Set();   // [COLLAPSIBLE DATES] collapse all on select
     renderTeamSelector(document.getElementById('stc-team-section'));
     const cs = document.getElementById('stc-conditions-section');
+    if (adapter.usesGameEntries && cs.scrollIntoView) cs.scrollIntoView({ behavior: 'smooth', block: 'start' });
     const teamLabel = adapter.displayLabel ? adapter.displayLabel(team) : adapter.teamNames[team];
     cs.innerHTML = `<div class="stc-loading"><div class="stc-spinner"></div><div style="margin-top:10px;">Loading ${teamLabel} roster...</div></div>`;
     document.getElementById('stc-results-section').innerHTML = '';
