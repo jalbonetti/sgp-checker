@@ -37,7 +37,9 @@ function timeOf(stamp) { const m = String(stamp || '').match(/^(\d{1,2}:\d{2}\s*
 function processFootballRoster(rows, teamValue) {
   const map = new Map();
   (rows || []).forEach(row => {
-    const name = String(row['Player'] || '').trim();
+    // Strip any trailing bracketed tag from the stored name (defensive; the
+    // builders now write clean names and carry tags in the Tag column).
+    const name = String(row['Player'] || '').trim().replace(/\s*\([A-Za-z]{1,4}\)\s*$/, '');
     if (!name || map.has(name)) return;
     const position = String(row['Position'] || '').trim().toUpperCase();
     if (!FOOTBALL_POSITIONS.includes(position)) return;           // QB/RB/WR only
