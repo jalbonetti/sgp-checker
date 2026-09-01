@@ -1,4 +1,4 @@
-// main.js - Same Team Prop Checker (Multi-Sport)
+// main.js - Same Game Parlay Builder (Multi-Sport)
 // Supports NBA, WNBA, NHL, MLB, NFL and NCAAF with sport tab switching and visibility controls.
 // Each sport has its own adapter (config, data, engine, name resolution).
 
@@ -646,8 +646,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     // Default to first visible sport
     state.activeSport = visibleSports[0];
 
-    root.innerHTML = `<div class="stc-header"><h1 class="stc-title">Same Team <span class="stc-title-accent">Prop Checker</span></h1>
-        <p class="stc-subtitle">Check historical co-occurrence of player props on the same team</p></div>
+    root.innerHTML = `<div class="stc-header"><h1 class="stc-title">Same Game Parlay <span class="stc-title-accent">Builder</span></h1>
+        <p class="stc-subtitle">Backtest your SGP legs against real game logs and see how often they actually hit together</p></div>
         <div class="stc-loading"><div class="stc-spinner"></div><div style="margin-top:10px;">Loading...</div></div>`;
 
     try {
@@ -655,7 +655,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         renderApp(root);
     } catch (e) {
         console.error('Init error:', e);
-        root.innerHTML = `<div class="stc-header"><h1 class="stc-title">Same Team <span class="stc-title-accent">Prop Checker</span></h1></div><div class="stc-error">Failed to load. Please refresh.</div>`;
+        root.innerHTML = `<div class="stc-header"><h1 class="stc-title">Same Game Parlay <span class="stc-title-accent">Builder</span></h1></div><div class="stc-error">Failed to load. Please refresh.</div>`;
     }
 });
 
@@ -664,7 +664,7 @@ function renderApp(root) {
 
     // Header
     const h = document.createElement('div'); h.className = 'stc-header';
-    h.innerHTML = `<h1 class="stc-title">Same Team <span class="stc-title-accent">Prop Checker</span></h1><p class="stc-subtitle">Check historical co-occurrence of player props on the same team</p>`;
+    h.innerHTML = `<h1 class="stc-title">Same Game Parlay <span class="stc-title-accent">Builder</span></h1><p class="stc-subtitle">Backtest your SGP legs against real game logs and see how often they actually hit together</p>`;
     root.appendChild(h);
 
     // Sport tabs (only if multiple sports visible)
