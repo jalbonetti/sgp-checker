@@ -48,9 +48,11 @@ export const FOOTBALL_SPORTS = {
   },
 };
 
-// Positions the checker rosters (TE/K/DST are out of scope by decision).
-export const FOOTBALL_POSITIONS = ['QB', 'RB', 'WR'];
-export const FOOTBALL_POSITION_LABELS = { QB: 'Quarterbacks', RB: 'Running Backs', WR: 'Wide Receivers' };
+// Positions the checker rosters (K/DST stay out of scope by decision).
+// TE added 9/22: CFB TEs had been sneaking in mislabeled as WR (the DFS feed
+// folds them), and correctly-labeled NFL TEs were being dropped entirely.
+export const FOOTBALL_POSITIONS = ['QB', 'RB', 'WR', 'TE'];
+export const FOOTBALL_POSITION_LABELS = { QB: 'Quarterbacks', RB: 'Running Backs', WR: 'Wide Receivers', TE: 'Tight Ends' };
 
 // Tags that lock a player to Does Not Play; anything else (Q/D/P) is shown
 // next to the name but leaves the full prop menu available.
