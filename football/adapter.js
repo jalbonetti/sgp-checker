@@ -122,9 +122,21 @@ export function makeFootballAdapter(sportId, state) {
         }));
       });
       const seen = new Set();
-      return entries
+      const deduped = entries
         .sort((a, b) => a.sortKey - b.sortKey || a.label.localeCompare(b.label))
         .filter(e => (seen.has(e.key) ? false : (seen.add(e.key), true)));
+      // [ALPHA WITHIN DAY] day sections stay in chronological order, but the
+      // teams INSIDE a day sort alphabetically — a 130-team CFB Saturday is
+      // unfindable in kick order. The matchup + kick time remain on each
+      // button's tooltip. (Dedup above still keeps a team's EARLIEST game
+      // when the board spans two of its weeks.)
+      const groupMin = new Map();
+      deduped.forEach(e => { const m = groupMin.get(e.group); if (m == null || e.sortKey < m) groupMin.set(e.group, e.sortKey); });
+      return deduped.sort((a, b) => {
+        const ga = groupMin.get(a.group), gb = groupMin.get(b.group);
+        if (ga !== gb) return ga === Infinity ? 1 : gb === Infinity ? -1 : ga - gb;
+        return a.label.localeCompare(b.label);
+      });
     },
 
     extractTeamsPlaying(games) { return [...new Set(this.gameEntries(games).map(e => e.code))].sort(); },
