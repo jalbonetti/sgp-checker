@@ -6,8 +6,10 @@ import { fetchHockeyGameLogs } from './dataService.js';
 
 function parseDate(dateStr) {
     if (!dateStr) return null;
-    // Hockey dates may be YYYY-MM-DD format
-    const d = new Date(dateStr);
+    // Log dates are YYYY-MM-DD. Parse as a LOCAL date — new Date("2026-10-12") is UTC midnight
+    // and slides back a day in US timezones, shifting games in/out of the last-30-day window.
+    const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(dateStr);
     return isNaN(d.getTime()) ? null : d;
 }
 
@@ -92,6 +94,8 @@ export async function runHockeyParlayCheck(conditions, teamAbbrev) {
     const COL_GOALS = findColumn(sampleRow, ['Goals', 'goals']);
     const COL_ASSISTS = findColumn(sampleRow, ['Assists', 'assists']);
     const COL_PPG = findColumn(sampleRow, ['Power Play Goals', 'Power_Play_Goals', 'power_play_goals', 'PowerPlayGoals']);
+    const COL_PPP = findColumn(sampleRow, ['Power Play Points', 'Power_Play_Points', 'power_play_points', 'PowerPlayPoints']);
+    const COL_HITS = findColumn(sampleRow, ['Hits', 'hits']);
     const COL_BS = findColumn(sampleRow, ['Blocked Shots', 'Blocked_Shots', 'blocked_shots', 'BlockedShots']);
     const COL_SOG = findColumn(sampleRow, ['Shots on Goal', 'Shots_on_Goal', 'shots_on_goal', 'ShotsOnGoal']);
 
@@ -103,6 +107,8 @@ export async function runHockeyParlayCheck(conditions, teamAbbrev) {
         'Goals': COL_GOALS,
         'Assists': COL_ASSISTS,
         'Power Play Goals': COL_PPG,
+        'Power Play Points': COL_PPP,
+        'Hits': COL_HITS,
         'Blocked Shots': COL_BS,
         'Shots on Goal': COL_SOG,
     };
