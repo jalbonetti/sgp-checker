@@ -10,7 +10,7 @@ export const HOCKEY_TEAM_FULL_NAMES = {
     'NYR':'New York Rangers','OTT':'Ottawa Senators','PHI':'Philadelphia Flyers',
     'PIT':'Pittsburgh Penguins','SEA':'Seattle Kraken','SJS':'San Jose Sharks',
     'STL':'St. Louis Blues','TBL':'Tampa Bay Lightning','TOR':'Toronto Maple Leafs',
-    'UTA':'Utah Hockey Club','VAN':'Vancouver Canucks','VGK':'Vegas Golden Knights',
+    'UTA':'Utah Mammoth','VAN':'Vancouver Canucks','VGK':'Vegas Golden Knights',
     'WPG':'Winnipeg Jets','WSH':'Washington Capitals',
 };
 
@@ -18,9 +18,11 @@ export const HOCKEY_NUMERIC_PROPS = [
     { id: 'points', label: 'Points', column: 'Points' },
     { id: 'goals', label: 'Goals', column: 'Goals' },
     { id: 'assists', label: 'Assists', column: 'Assists' },
+    { id: 'ppp', label: 'Power Play Points', column: 'Power Play Points' },
     { id: 'ppg', label: 'Power Play Goals', column: 'Power Play Goals' },
     { id: 'bs', label: 'Blocked Shots', column: 'Blocked Shots' },
     { id: 'sog', label: 'Shots on Goal', column: 'Shots on Goal' },
+    { id: 'hits', label: 'Hits', column: 'Hits' },
 ];
 
 export const HOCKEY_NONE_PROP = { id: 'none', label: 'None', column: null, type: 'none' };
@@ -37,9 +39,10 @@ export const HOCKEY_SCOPE_OPTIONS = [
     { id: 'dnp', label: 'Does Not Play' },
 ];
 
-// Injuries that allow regular props (shown in main group)
-export const HOCKEY_MINOR_INJURIES = ['DTD'];
-// Injuries that force DNP only (shown in injured group)
-export const HOCKEY_DNP_INJURIES = ['Out', 'IR', 'LTIR'];
+// Tags (HockeyMatchupsPlayers.Tag) that allow regular props — shown in the main group with the tag
+export const HOCKEY_MINOR_INJURIES = ['DTD', 'GTD', 'Q', 'D', 'P'];
+// Tags that force Does Not Play (the row's Role is also 'Not Playing')
+export const HOCKEY_DNP_INJURIES = ['OUT', 'IR', 'LTIR', 'SUSP', 'NR', 'OFS'];
+export const HOCKEY_ROLE_NOT_PLAYING = 'Not Playing';
 
 export const HOCKEY_MAX_STAT_VALUE = 50;
