@@ -36,7 +36,8 @@ async function supabaseFetchAll(endpoint, queryParams = '') {
     return allRecords;
 }
 
-/** Fetch today's hockey games from HockeyMatchupsGame */
+/** Fetch today's hockey games from HockeyMatchupsGame (one row per team-card:
+ *  Matchup ID "AWAY@HOME|7:00 PM ET 10/12/2026", Team, Opponent, Home/Away, Game Time, ...) */
 export async function fetchHockeyGames() {
     try {
         const data = await supabaseFetch('HockeyMatchupsGame', '?select=*');
@@ -47,10 +48,17 @@ export async function fetchHockeyGames() {
     }
 }
 
-/** Fetch skater roster for a team from HockeyMatchupsSkater */
+/**
+ * Fetch a team's roster from HockeyMatchupsPlayers (card-format table, 2026-27):
+ *   Matchup ID, Team, Player, Player ID, Position (C/W/D/G), Role (Skater | Starter |
+ *   Backup | Not Playing), Injury, Status, Tag, Stats JSON.
+ * The Stats JSON blob is several KB per row and never read here, so it is excluded.
+ */
 export async function fetchHockeyRoster(teamAbbrev) {
     try {
-        return await supabaseFetch('HockeyMatchupsSkater', `?Team=eq.${encodeURIComponent(teamAbbrev)}&select=*`);
+        const cols = ['Matchup ID', 'Team', 'Player', 'Player ID', 'Position', 'Role', 'Injury', 'Status', 'Tag']
+            .map(c => (c.includes(' ') ? `"${c}"` : c)).join(',');
+        return await supabaseFetch('HockeyMatchupsPlayers', `?Team=eq.${encodeURIComponent(teamAbbrev)}&select=${encodeURIComponent(cols)}`);
     } catch (error) {
         console.error(`Error fetching hockey roster for ${teamAbbrev}:`, error);
         return [];
