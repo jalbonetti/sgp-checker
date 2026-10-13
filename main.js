@@ -12,7 +12,7 @@ import { WNBA_TEAM_FULL_NAMES, WNBA_ALL_PROPS, WNBA_NUMERIC_PROPS, WNBA_BINARY_P
 import { fetchWNBAMatchupPlayers } from './wnba/dataService.js';
 import { runWNBAParlayCheck } from './wnba/parlayEngine.js';
 
-import { HOCKEY_TEAM_FULL_NAMES, HOCKEY_ALL_PROPS, HOCKEY_NUMERIC_PROPS, HOCKEY_NONE_PROP, HOCKEY_INJURED_PROP, HOCKEY_SCOPE_OPTIONS, HOCKEY_DNP_INJURIES, HOCKEY_MINOR_INJURIES, HOCKEY_MAX_STAT_VALUE } from './hockey/config.js';
+import { HOCKEY_TEAM_FULL_NAMES, HOCKEY_ALL_PROPS, HOCKEY_NUMERIC_PROPS, HOCKEY_NONE_PROP, HOCKEY_INJURED_PROP, HOCKEY_SCOPE_OPTIONS, HOCKEY_DNP_INJURIES, HOCKEY_MINOR_INJURIES, HOCKEY_MAX_STAT_VALUE, HOCKEY_ROLE_NOT_PLAYING } from './hockey/config.js';
 import { fetchHockeyGames, fetchHockeyRoster, fetchHockeyGameLogs } from './hockey/dataService.js';
 import { loadHockeyNameTable, buildHockeyReverseNameMap } from './hockey/nameResolver.js';
 import { runHockeyParlayCheck } from './hockey/parlayEngine.js';
@@ -86,6 +86,18 @@ function clockToMinutes(str) {
 function hasStarted(clockStr) {
     const mins = clockToMinutes(clockStr);
     return mins != null && mins <= etNowMinutes();
+}
+// Full ET stamp ("7:00 PM ET 10/12/2026") -> ms, DST-aware. Used where the stamp carries a date
+// (NHL): a stale prior-day board then drops out entirely instead of comparing clock-to-clock.
+function stampToMs(stamp) {
+    const m = String(stamp || '').match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s*E[DS]?T\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    if (!m) return null;
+    let h = parseInt(m[1], 10) % 12; if (m[3].toUpperCase() === 'PM') h += 12;
+    const y = +m[6], mo = +m[4] - 1, d = +m[5];
+    const mar = new Date(Date.UTC(y, 2, 1)), nov = new Date(Date.UTC(y, 10, 1));
+    const dstStart = 1 + ((7 - mar.getUTCDay()) % 7) + 7, dstEnd = 1 + ((7 - nov.getUTCDay()) % 7);
+    const off = ((mo > 2) || (mo === 2 && d >= dstStart)) && ((mo < 10) || (mo === 10 && d < dstEnd)) ? 4 : 5;
+    return Date.UTC(y, mo, d, h + off, +m[2]);
 }
 
 
@@ -272,6 +284,7 @@ const NHL_ADAPTER = {
     scopeOptions: HOCKEY_SCOPE_OPTIONS,
     maxStatValue: HOCKEY_MAX_STAT_VALUE,
     hasBinaryProps: false,
+    hidesNonPlaying: true,   // [STARTED-GAME HIDING] + [FULL NAMES]: only teams whose game hasn't started, labelled by full name
 
     async loadInitialData() {
         const [nameMap, games] = await Promise.all([loadHockeyNameTable(), fetchHockeyGames()]);
@@ -280,16 +293,33 @@ const NHL_ADAPTER = {
         state.games = games;
     },
 
+    // HockeyMatchupsGame (2026-27 card format) is one row per team-card:
+    //   Team (abbr), Opponent, Home/Away, Game Time ("7:00 PM ET 10/12/2026"), Matchup ID ("AWAY@HOME|stamp").
+    // A team is listed only while its game hasn't started (full date+time compare, so a
+    // stale prior-day board drops out). Unreadable stamps fail OPEN.
     extractTeamsPlaying(games) {
+        const now = Date.now();
         const t = new Set();
-        games.forEach(g => {
-            const matchup = g['Matchup'] || '';
-            // Parse full team names from matchup string (e.g. "Florida Panthers vs Chicago Blackhawks")
-            Object.entries(HOCKEY_TEAM_FULL_NAMES).forEach(([abbrev, fullName]) => {
-                if (matchup.includes(fullName)) t.add(abbrev);
-            });
+        (games || []).forEach(g => {
+            const team = String(g['Team'] || '').trim();
+            if (!HOCKEY_TEAM_FULL_NAMES[team]) return;
+            const start = stampToMs(g['Game Time']);
+            if (start != null && start <= now) return;
+            t.add(team);
         });
         return [...t].sort();
+    },
+
+    // "Toronto Maple Leafs — MTL @ TOR · 7:00 PM ET" for the button tooltip
+    matchupLabel(team) {
+        const row = (state.games || []).find(g => String(g['Team'] || '').trim() === team);
+        const full = HOCKEY_TEAM_FULL_NAMES[team] || team;
+        if (!row) return full;
+        const isHome = String(row['Home/Away'] || '') === 'Home';
+        const opp = String(row['Opponent'] || '').trim();
+        const pair = isHome ? `${opp} @ ${team}` : `${team} @ ${opp}`;
+        const tm = String(row['Game Time'] || '').match(/^(\d{1,2}:\d{2}\s*[AP]M)/i);
+        return `${full} — ${pair}${tm ? ` · ${tm[1]} ET` : ''}`;
     },
 
     async fetchRoster(team) {
@@ -578,26 +608,30 @@ function processHockeyRoster(data, team) {
     }
 
     data.forEach(row => {
-        const rawName = (row['Skater Name'] || '').trim();
-        if (!rawName) return;
+        // HockeyMatchupsPlayers: Player (canonical, untagged), Player ID, Position (C/W/D/G),
+        // Role (Skater | Starter | Backup | Not Playing), Injury, Status, Tag.
+        const cleanName = stripHockeyInjury((row['Player'] || row['Skater Name'] || '').trim());
+        if (!cleanName || map.has(cleanName)) return;
+        const position = String(row['Position'] || '').trim().toUpperCase();
+        const role = String(row['Role'] || '').trim();
+        if (position === 'G' || role === 'Starter' || role === 'Backup') return;   // skaters only — goalie stats aren't in the skater logs
 
-        const injuryStatus = parseHockeyInjury(rawName);
-        const cleanName = stripHockeyInjury(rawName);
-        if (map.has(cleanName)) return;
+        const tag = String(row['Tag'] || '').trim().toUpperCase();
+        const injuryStatus = tag || parseHockeyInjury((row['Player'] || row['Skater Name'] || '').trim());
+        // Out / IR / LTIR / Suspended / Non-Roster / OFS -> locked to Does Not Play
+        const isDNPInjury = role === HOCKEY_ROLE_NOT_PLAYING || (!!injuryStatus && HOCKEY_DNP_INJURIES.includes(injuryStatus));
+        const isMinorInjury = !isDNPInjury && !!injuryStatus && HOCKEY_MINOR_INJURIES.includes(injuryStatus);
 
-        // Determine if this is a DNP-only injury
-        const isDNPInjury = injuryStatus && HOCKEY_DNP_INJURIES.includes(injuryStatus);
-        const isMinorInjury = injuryStatus && HOCKEY_MINOR_INJURIES.includes(injuryStatus);
-
-        // Look up game log name and player ID from NormalNames
+        // Player ID comes with the row (NormalNames -> logs share NHL IDs); the name table is
+        // the fallback and supplies the logs' abbreviated "F. Last" spelling.
+        let playerId = row['Player ID'] != null && String(row['Player ID']).trim() !== '' ? String(row['Player ID']).trim() : null;
         let gameLogName = cleanName;
-        let playerId = null;
         const nameInfo = state.nameMap?.get(cleanName);
         if (nameInfo) {
             gameLogName = nameInfo.gameLogName || cleanName;
-            playerId = nameInfo.playerId || null;
-        } else {
-            console.warn(`🏒 No NormalNames entry for "${cleanName}"`);
+            if (!playerId && nameInfo.playerId) playerId = String(nameInfo.playerId);
+        } else if (!playerId) {
+            console.warn(`🏒 No NormalNames entry or Player ID for "${cleanName}"`);
         }
 
         // Display name: show injury status if present
@@ -609,6 +643,7 @@ function processHockeyRoster(data, team) {
             gameLogName,
             playerId,
             team,
+            position,
             injuryStatus,
             isInjured: isDNPInjury,       // Out/IR/LTIR → forced DNP
             isMinorInjury,                 // DTD → main group but flagged
