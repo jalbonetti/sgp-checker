@@ -3,10 +3,11 @@
 // Each sport has its own adapter (config, data, engine, name resolution).
 
 import { injectStyles } from './styles/styles.js';
-import { CONFIG, SPORT_VISIBILITY, SPORT_ORDER, SPORT_LABELS, ALL_PROPS, NUMERIC_PROPS, BINARY_PROPS, NONE_PROP, INJURED_PROP, SCOPE_OPTIONS, TEAM_FULL_NAMES } from './config.js';
-import { fetchTodaysGames, fetchTeamRoster } from './services/dataService.js';
-import { loadAliasTable, buildReverseAliasMap } from './utils/nameResolver.js';
-import { runParlayCheck } from './services/parlayEngine.js';
+import { CONFIG, SPORT_VISIBILITY, SPORT_ORDER, SPORT_LABELS } from './config.js';
+// [NBA 2026-27] card-format tables (BasketMatchupsPlayers / BasketGameLogs) — same shape as WNBA
+import { NBA_TEAM_FULL_NAMES, NBA_ALL_PROPS, NBA_NUMERIC_PROPS, NBA_BINARY_PROPS, NBA_NONE_PROP, NBA_INJURED_PROP, NBA_SCOPE_OPTIONS, NBA_MAX_STAT_VALUE, NBA_ROLE_STARTER, NBA_ROLE_BENCH, NBA_ROLE_NOT_PLAYING, NBA_DNP_TAGS, nbaCode } from './nba/config.js';
+import { fetchNBAMatchupPlayers } from './nba/dataService.js';
+import { runNBAParlayCheck } from './nba/parlayEngine.js';
 
 import { WNBA_TEAM_FULL_NAMES, WNBA_ALL_PROPS, WNBA_NUMERIC_PROPS, WNBA_BINARY_PROPS, WNBA_NONE_PROP, WNBA_INJURED_PROP, WNBA_SCOPE_OPTIONS, WNBA_MAX_STAT_VALUE, WNBA_ROLE_STARTER, WNBA_ROLE_BENCH, WNBA_ROLE_NOT_PLAYING, WNBA_DNP_TAGS } from './wnba/config.js';
 import { fetchWNBAMatchupPlayers } from './wnba/dataService.js';
@@ -38,15 +39,13 @@ const state = {
     results: null,
     mlbLineups: [],      // MLB: cached lineups (sliced per team + game leg in fetchRoster)
     wnbaMatchupPlayers: [], // WNBA: slate + rosters in one table, cached once per load
+    nbaMatchupPlayers: [],  // NBA: same pattern (BasketMatchupsPlayers)
     footballPlayers: [], // NFL/NCAAF: matchups-player rows, cached once per load  [FOOTBALL EDIT 2/6]
     openGroups: null,    // [COLLAPSIBLE DATES] Set of expanded date-section labels (null = default: first open)
 };
 
-const NBA_SUFFIXES = ['Jr.', 'Jr', 'Sr.', 'Sr', 'II', 'III', 'IV', 'V'];
-const QUALIFIER_REGEX = /\s*\((Q|P|D|Out|OFS)\)\s*$/;
 const HOCKEY_INJURY_REGEX = /\s*\((DTD|Out|IR|LTIR)\)\s*$/;
 
-function stripQualifier(name) { return (name || '').replace(QUALIFIER_REGEX, '').trim(); }
 function stripHockeyInjury(name) { return (name || '').replace(HOCKEY_INJURY_REGEX, '').trim(); }
 function parseHockeyInjury(name) {
     const match = (name || '').match(HOCKEY_INJURY_REGEX);
@@ -121,35 +120,54 @@ function getAdapter() {
 const NBA_ADAPTER = {
     id: 'nba',
     label: 'NBA',
-    teamNames: TEAM_FULL_NAMES,
-    allProps: ALL_PROPS,
-    numericProps: NUMERIC_PROPS,
-    binaryProps: BINARY_PROPS,
-    noneProp: NONE_PROP,
-    injuredProp: INJURED_PROP,
-    scopeOptions: SCOPE_OPTIONS,
-    maxStatValue: CONFIG.MAX_STAT_VALUE,
+    teamNames: NBA_TEAM_FULL_NAMES,
+    allProps: NBA_ALL_PROPS,
+    numericProps: NBA_NUMERIC_PROPS,
+    binaryProps: NBA_BINARY_PROPS,
+    noneProp: NBA_NONE_PROP,
+    injuredProp: NBA_INJURED_PROP,
+    scopeOptions: NBA_SCOPE_OPTIONS,
+    maxStatValue: NBA_MAX_STAT_VALUE,
     hasBinaryProps: true,
+    hidesNonPlaying: true,   // [STARTED-GAME HIDING] + [FULL NAMES]: only teams whose game hasn't started, labelled by full name
 
+    // Slate + rosters come from one table (BasketMatchupsPlayers); fetched once, sliced per team.
     async loadInitialData() {
-        const [nameMap, games] = await Promise.all([loadAliasTable(), fetchTodaysGames()]);
-        state.nameMap = nameMap;
-        state.reverseNameMap = buildReverseAliasMap(nameMap);
-        state.games = games;
+        const rows = await fetchNBAMatchupPlayers();
+        state.nbaMatchupPlayers = rows;
+        state.games = rows;
+        state.nameMap = null;        // name joins happen in the engine (normalized + alias groups)
+        state.reverseNameMap = null;
     },
 
+    // Matchup ID = "AWAY@HOME|7:30 PM ET 10/21/2026" — a dated stamp, so compare real instants:
+    // a started game drops out, and a stale prior-day board drops out entirely. Unreadable -> stays listed.
     extractTeamsPlaying(games) {
         const t = new Set();
-        games.forEach(g => {
-            ['Home Team', 'Away Team'].forEach(f => { const v = (g[f] || '').trim(); if (TEAM_FULL_NAMES[v]) t.add(v); });
-            const m = g['Matchup'] || '';
-            Object.entries(TEAM_FULL_NAMES).forEach(([a, fn]) => { if (m.includes(fn)) t.add(a); });
+        (games || []).forEach(r => {
+            const team = nbaCode(r['Team']);
+            if (!NBA_TEAM_FULL_NAMES[team]) return;
+            const stamp = String(r['Matchup ID'] || '').split('|')[1] || '';
+            const ms = stampToMs(stamp);
+            if (ms != null ? ms <= Date.now() : hasStarted(stamp)) return;   // [STARTED-GAME HIDING]
+            t.add(team);
         });
         return [...t].sort();
     },
 
+    // "MEM@BKN|7:30 PM ET 10/21/2026" -> "Memphis Grizzlies — MEM @ BKN · 7:30 PM ET 10/21/2026"
+    matchupLabel(team) {
+        const row = (state.nbaMatchupPlayers || []).find(r => nbaCode(r['Team']) === team);
+        const raw = row ? String(row['Matchup ID'] || '').trim() : '';
+        if (!raw) return NBA_TEAM_FULL_NAMES[team] || team;
+        const [teams, time] = raw.split('|');
+        const pretty = (teams || '').replace('@', ' @ ');
+        return `${NBA_TEAM_FULL_NAMES[team] || team} — ${pretty}${time ? ` · ${time.trim()}` : ''}`;
+    },
+
     async fetchRoster(team) {
-        return processNBARoster(await fetchTeamRoster(team), team);
+        const rows = (state.nbaMatchupPlayers || []).filter(r => nbaCode(r['Team']) === team);
+        return processNBARoster(rows, team);
     },
 
     getRosterGroups(roster) {
@@ -160,15 +178,15 @@ const NBA_ADAPTER = {
 
     getScopeOptionsForPlayer(p) {
         if (!p) return [];
-        if (p.isInjured) return SCOPE_OPTIONS.filter(s => s.id === 'dnp');
-        if (p.isStarter) return SCOPE_OPTIONS.filter(s => s.id !== 'off_bench');
-        if (p.isBench) return SCOPE_OPTIONS.filter(s => s.id !== 'starts');
-        return SCOPE_OPTIONS;
+        if (p.isInjured) return NBA_SCOPE_OPTIONS.filter(s => s.id === 'dnp');
+        if (p.isStarter) return NBA_SCOPE_OPTIONS.filter(s => s.id !== 'off_bench');
+        if (p.isBench) return NBA_SCOPE_OPTIONS.filter(s => s.id !== 'starts');
+        return NBA_SCOPE_OPTIONS;
     },
 
     findPropDef(propId) {
-        if (propId === 'none') return NONE_PROP;
-        return [...NUMERIC_PROPS, ...BINARY_PROPS].find(p => p.id === propId) || null;
+        if (propId === 'none') return NBA_NONE_PROP;
+        return [...NBA_NUMERIC_PROPS, ...NBA_BINARY_PROPS].find(p => p.id === propId) || null;
     },
 
     isBinaryProp(propDef) {
@@ -176,12 +194,11 @@ const NBA_ADAPTER = {
     },
 
     getDefaultDirection(propDef) {
-        if (this.isBinaryProp(propDef)) return 'yes';
-        return 'gte';
+        return this.isBinaryProp(propDef) ? 'yes' : 'gte';
     },
 
     async runCheck(conditions, team) {
-        return runParlayCheck(conditions, team);
+        return runNBAParlayCheck(conditions, team);
     },
 };
 
@@ -570,31 +587,38 @@ function processMLBRoster(allLineups, rosterRows, fullName, gameNum) {
 // ============================================================
 // ROSTER PROCESSING
 // ============================================================
-function processNBARoster(data, team) {
+// NBA roster rows (BasketMatchupsPlayers): Player | Position | Role (Starter | Bench | Not Playing) |
+// Injury | Status | Tag. Same shape as the WNBA table, same rules: Not Playing / OUT / OFS / INACTIVE
+// lock the player to Does Not Play; any other tag is shown next to the name with the full prop menu.
+function processNBARoster(rows, team) {
     const map = new Map();
-    data.forEach(row => {
-        const displayName = (row['Player'] || '').trim();
-        if (!displayName || map.has(displayName)) return;
-        const lineup = (row['Lineup'] || '').trim();
-        const cleanName = stripQualifier(displayName);
-        let gl = state.reverseNameMap?.get(cleanName) || state.reverseNameMap?.get(displayName) || '';
-        if (!gl) gl = constructNBAGameLogName(cleanName);
-        map.set(displayName, { displayName, cleanName, gameLogName: gl, team, lineup,
-            isInjured: lineup === 'Injury', isStarter: lineup.includes('Starter'), isBench: lineup.includes('Bench') });
+    (rows || []).forEach(row => {
+        const name = String(row['Player'] || '').trim();
+        if (!name || map.has(name)) return;
+        const role = String(row['Role'] || '').trim();
+        const tag = String(row['Tag'] || '').trim();
+        const status = String(row['Status'] || '').trim();
+        const injury = String(row['Injury'] || '').trim();
+        const position = String(row['Position'] || '').trim();
+        const isNotPlaying = role === NBA_ROLE_NOT_PLAYING;
+        const isDnpTag = !!tag && NBA_DNP_TAGS.includes(tag.toUpperCase());
+        const isInjured = isNotPlaying || isDnpTag;
+        map.set(name, {
+            displayName: tag ? `${name} (${tag})` : name,
+            cleanName: name,
+            gameLogName: name,
+            team, position, role, injury, status, tag,
+            isInjured,
+            isStarter: !isInjured && role === NBA_ROLE_STARTER,
+            isBench: !isInjured && role === NBA_ROLE_BENCH,
+            isMinorTag: !isInjured && !!tag,
+        });
     });
     return [...map.values()].sort((a, b) => {
-        const ao = a.isStarter ? 0 : a.isInjured ? 2 : 1;
-        const bo = b.isStarter ? 0 : b.isInjured ? 2 : 1;
+        const order = p => (p.isStarter ? 0 : p.isInjured ? 2 : 1);
+        const ao = order(a), bo = order(b);
         return ao !== bo ? ao - bo : a.displayName.localeCompare(b.displayName);
     });
-}
-
-function constructNBAGameLogName(name) {
-    if (!name) return '';
-    const t = name.trim().split(/\s+/); if (t.length < 2) return name;
-    const last = t[t.length - 1];
-    if (NBA_SUFFIXES.some(s => last === s || last === s.replace('.', '')) && t.length >= 3) { const suf = t.pop(); const ln = t.pop(); return `${ln}, ${t.join(' ')} ${suf}`; }
-    const ln = t.pop(); return `${ln}, ${t.join(' ')}`;
 }
 
 function processHockeyRoster(data, team) {
@@ -740,6 +764,7 @@ async function onSportTabClicked(sportId) {
     state.reverseNameMap = null;
     state.mlbLineups = [];
     state.wnbaMatchupPlayers = [];
+    state.nbaMatchupPlayers = [];
     state.footballPlayers = [];   // [FOOTBALL EDIT 4/6]
     state.openGroups = null;      // [COLLAPSIBLE DATES]
 
