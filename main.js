@@ -691,7 +691,9 @@ function processHockeyRoster(data, team) {
 // ============================================================
 // INIT
 // ============================================================
-document.addEventListener('DOMContentLoaded', async function () {
+// Boot once the DOM is ready — or right away if the script lands after DOMContentLoaded
+// (the bundled build is a classic deferred script, and Webflow injects custom code late).
+async function bootSGP() {
     injectStyles();
     const root = document.getElementById('stc-root'); if (!root) return;
 
@@ -716,7 +718,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         console.error('Init error:', e);
         root.innerHTML = `<div class="stc-header"><h1 class="stc-title">Same Game Parlay <span class="stc-title-accent">Builder</span></h1></div><div class="stc-error">Failed to load. Please refresh.</div>`;
     }
-});
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootSGP);
+else bootSGP();
 
 function renderApp(root) {
     root.innerHTML = '';
